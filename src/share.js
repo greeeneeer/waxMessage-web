@@ -6,7 +6,6 @@ export const SOAP = { w: 3.2, h: 1.1, d: 2.2, r: 0.34 };
 // 글씨가 들어가는 평평한 윗면의 가로세로
 export const LABEL = { w: SOAP.w - 2 * SOAP.r, d: SOAP.d - 2 * SOAP.r };
 
-export const LIMIT = { lines: 2 };
 export const MAX_LAYERS = 3; // 왁스는 최대 세 겹
 
 export const PALETTE = {
@@ -67,22 +66,9 @@ export const FONTS = [
 
 const clampIndex = (v, list) => (Number.isInteger(v) && v >= 0 && v < list.length ? v : 0);
 
-// 두 줄까지만 남긴다
-export function cleanLines(lines) {
-  return lines
-    .slice(0, LIMIT.lines)
-    .map((l) => String(l ?? '').replace(/[\r\n]/g, '')); // 글자 수 제한 없음: 길면 글씨가 작아진다
-}
-
-// 왁스 글씨: 글자 수·줄 수 제한 없이 하나의 글. 끝의 빈칸·빈 줄만 지운다
+// 글씨(클레이·왁스 모두): 글자 수·줄 수 제한 없이 하나의 글. 끝의 빈칸·빈 줄만 지운다
 export function cleanText(v) {
   return String(v ?? '').replace(/\r/g, '').replace(/\s+$/, '');
-}
-
-export function textOf(lines) {
-  const ls = cleanLines(lines);
-  while (ls.length && !ls[ls.length - 1].trim()) ls.pop();
-  return ls.join('\n');
 }
 
 // data.layers: 왁스 겹 목록, 바깥부터. [{ w: 왁스 색, o: 그 겹 겉면 글씨, k: 그 겹 글씨 색 }]
@@ -108,7 +94,7 @@ export function decode(code) {
     const bin = atob(s);
     const bytes = Uint8Array.from(bin, (ch) => ch.charCodeAt(0));
     const o = JSON.parse(new TextDecoder().decode(bytes));
-    const t = textOf(String(o.t ?? '').split('\n'));
+    const t = cleanText(o.t);
     if (!t.trim()) return null;
     const k = clampIndex(o.k, PALETTE.ink);
     const ink = (v) => (Number.isInteger(v) ? clampIndex(v, PALETTE.ink) : k);

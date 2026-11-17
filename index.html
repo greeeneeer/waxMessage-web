@@ -38,24 +38,24 @@
     </section>
 
     <section class="field">
-      <label class="field-title" for="l1">숨길 글씨</label>
-      <div class="line"><input id="l1" type="text" autocomplete="off" placeholder="첫째 줄" /></div>
-      <div class="line"><input id="l2" type="text" autocomplete="off" placeholder="둘째 줄" /></div>
-      <div class="sub">글씨 색</div>
-      <div id="inks" class="swatches"></div>
+      <h2 class="field-title">클레이</h2>
+      <div class="layer-card">
+        <div class="layer-head"><b>숨길 글씨</b></div>
+        <textarea id="clayText" class="text" rows="2" autocomplete="off" aria-label="숨길 글씨"></textarea>
+        <div class="sub">글씨 색</div>
+        <div id="inks" class="swatches"></div>
+        <div class="sub">클레이 색</div>
+        <div id="clays" class="swatches"></div>
+      </div>
     </section>
 
     <section class="field">
       <h2 class="field-title">글꼴</h2>
       <div id="fonts" class="chips"></div>
     </section>
-    <section class="field">
-      <h2 class="field-title">비누 색</h2>
-      <div id="clays" class="swatches"></div>
-    </section>
     <section class="actions">
       <input id="link" class="link" type="text" readonly aria-label="보낼 링크" />
-      <button id="copy" class="primary" disabled>링크 복사하기</button>
+      <button id="copy" class="primary" disabled>링크 복사</button>
       <button id="share" class="secondary" disabled hidden>공유하기</button>
       <button id="try" class="ghost" disabled>내가 먼저 깨 보기</button>
       <p id="toast" class="toast" role="status"></p>

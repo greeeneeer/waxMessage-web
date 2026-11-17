@@ -1,5 +1,5 @@
 // 작성 화면: 숨길 글씨, 왁스 겹(색·겉면 글씨), 글꼴·색을 고르고 보낼 링크를 만든다.
-import { PALETTE, FONTS, SOAP, MAX_LAYERS, encode, cleanLines, cleanText, textOf } from './share.js';
+import { PALETTE, FONTS, SOAP, MAX_LAYERS, encode, cleanText } from './share.js';
 import { drawLabel, ensureFont } from './label.js';
 
 const $ = (id) => document.getElementById(id);
@@ -24,7 +24,8 @@ export function startCompose() {
   // 예전 초안(겹 하나: w, outer)도 읽는다
   const draftLayers = Array.isArray(d.layers) && d.layers.length ? d.layers : [{ w: d.w, lines: d.outer }];
   const state = {
-    lines: cleanLines([d.lines?.[0] ?? '', d.lines?.[1] ?? '']),
+    // 숨길 글씨 (예전 초안은 두 줄 lines였다 → 한 글로 합친다)
+    text: typeof d.text === 'string' ? d.text : (d.lines || []).filter(Boolean).join('\n'),
     // 예전 초안은 겹 글씨가 두 줄(lines)이었다 → 한 글로 합친다
     layers: draftLayers.slice(0, MAX_LAYERS).map((l) => ({
       w: pick(l.w, PALETTE.wax),
@@ -36,36 +37,16 @@ export function startCompose() {
     k: pick(d.k, PALETTE.ink),
   };
 
-  // 숨길 글씨
-  bindLines([$('l1'), $('l2')], state.lines);
-
-  // 두 줄 입력칸을 상태에 연결한다
-  function bindLines(inputs, target) {
-    inputs.forEach((el, i) => {
-      el.value = target[i];
-      el.addEventListener('input', () => {
-        // 한글 조합 중에는 건드리지 않는다
-        if (!el.dataset.composing) {
-          const clean = cleanLines([el.value])[0];
-          if (clean !== el.value) el.value = clean;
-        }
-        target[i] = el.value;
-        update();
-      });
-      el.addEventListener('compositionstart', () => (el.dataset.composing = '1'));
-      el.addEventListener('compositionend', () => {
-        delete el.dataset.composing;
-        el.dispatchEvent(new Event('input'));
-      });
-      el.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' && !e.isComposing) {
-          e.preventDefault();
-          if (i === 0) inputs[1].focus();
-          else el.blur();
-        }
-      });
-    });
+  // 글이 길어지면 칸도 따라 늘어나는 글씨 칸
+  function bindText(ta, get, set) {
+    ta.value = get();
+    const grow = () => { ta.style.height = 'auto'; ta.style.height = `${ta.scrollHeight + 2}px`; };
+    ta.addEventListener('input', () => { set(ta.value); grow(); update(); });
+    requestAnimationFrame(grow);
   }
+
+  // 숨길 글씨
+  bindText($('clayText'), () => state.text, (v) => (state.text = v));
 
   // 왁스 겹 카드들
   function renderLayers() {
@@ -82,12 +63,7 @@ export function startCompose() {
         <div class="sub">왁스 색</div>
         <div class="swatches wax"></div>`;
       card.querySelector('b').textContent = layerName(i);
-      const ta = card.querySelector('textarea');
-      ta.value = layer.text;
-      // 글이 길어지면 칸도 따라 늘어난다
-      const grow = () => { ta.style.height = 'auto'; ta.style.height = `${ta.scrollHeight + 2}px`; };
-      ta.addEventListener('input', () => { layer.text = ta.value; grow(); update(); });
-      requestAnimationFrame(grow);
+      bindText(card.querySelector('textarea'), () => layer.text, (v) => (layer.text = v));
 
       const inkBox = card.querySelector('.ink');
       PALETTE.ink.forEach(([color, name], j) => {
@@ -173,7 +149,7 @@ export function startCompose() {
     const link = $('link').value;
     try {
       await navigator.clipboard.writeText(link);
-      toast('링크를 복사했어요! 보내고 싶은 사람에게 붙여 넣으세요');
+      toast('복사 완료');
     } catch {
       $('link').select();
       toast('위 링크를 길게 눌러 복사해 주세요');
@@ -217,14 +193,14 @@ export function startCompose() {
 
   function currentData() {
     return {
-      t: textOf(state.lines),
+      t: cleanText(state.text),
       layers: state.layers.map((l) => ({ w: l.w, k: l.k, o: cleanText(l.text) })),
       f: state.f, c: state.c, k: state.k,
     };
   }
 
   function update() {
-    saveDraft({ lines: [...state.lines], layers: state.layers.map((l) => ({ w: l.w, k: l.k, text: l.text })), f: state.f, c: state.c, k: state.k });
+    saveDraft({ text: state.text, layers: state.layers.map((l) => ({ w: l.w, k: l.k, text: l.text })), f: state.f, c: state.c, k: state.k });
     const data = currentData();
     const ok = !!data.t.trim();
     $('link').value = ok ? `${location.origin}${location.pathname}#${encode(data)}` : '';
