@@ -28,10 +28,19 @@
 
     <p id="notice" class="notice" hidden>링크가 잘못됐어요. 새로 만들어 보세요.</p>
 
-    <canvas id="preview" class="preview" width="640" height="440" aria-label="비누 미리보기"></canvas>
+    <div class="previews">
+      <figure><canvas id="previewOuter" width="480" height="340" aria-label="왁스 겉면 미리보기"></canvas><figcaption>겉 (왁스)</figcaption></figure>
+      <figure><canvas id="preview" width="480" height="340" aria-label="클레이 미리보기"></canvas><figcaption>속 (클레이)</figcaption></figure>
+    </div>
 
     <section class="field">
-      <label class="field-title" for="l1">숨길 글씨 <small>두 줄, 줄마다 10자까지</small></label>
+      <label class="field-title" for="o1">왁스 겉면 글씨 <small>깨기 전에 보여요 · 비워도 돼요</small></label>
+      <div class="line"><input id="o1" type="text" maxlength="10" autocomplete="off" placeholder="예: 무대 날짜 공개" /><span id="m1" class="count">0/10</span></div>
+      <div class="line"><input id="o2" type="text" maxlength="10" autocomplete="off" placeholder="둘째 줄" /><span id="m2" class="count">0/10</span></div>
+    </section>
+
+    <section class="field">
+      <label class="field-title" for="l1">숨길 글씨 <small>클레이에 쓰여요 · 두 줄, 줄마다 10자</small></label>
       <div class="line"><input id="l1" type="text" maxlength="10" autocomplete="off" placeholder="첫째 줄" /><span id="n1" class="count">0/10</span></div>
       <div class="line"><input id="l2" type="text" maxlength="10" autocomplete="off" placeholder="둘째 줄 (비워도 돼요)" /><span id="n2" class="count">0/10</span></div>
     </section>
@@ -65,8 +74,6 @@
   <!-- 깨기 화면 -->
   <div id="play" class="play">
     <canvas id="scene"></canvas>
-    <p id="hint" class="hint">메세지 확인</p>
-    <button id="mute" class="mute" aria-label="소리 끄기">🔊</button>
     <div id="loading" class="loading">비누 굳히는 중…</div>
     <div id="done" class="done">
       <div class="done-buttons">

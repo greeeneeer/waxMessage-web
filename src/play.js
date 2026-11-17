@@ -1,28 +1,31 @@
-// 깨기 화면: 불투명한 왁스로 덮인 비누 덩어리가 공중에 비스듬히 떠 있다.
-// - 덩어리를 꾹 누르면: 누른 자리 주변 왁스에 금이 가고 들뜬다 (클레이가 살짝 눌린다)
-// - 금 간 왁스를 한 번 더 누르면: 그 파편들이 바닥으로 떨어진다
+// 깨기 화면: 어두운 무대 위, 핀 조명 아래 왁스로 덮인 비누 덩어리가 앞뒤로만 비스듬히 떠 있다.
+// - 덩어리를 꾹 누르면: 누른 자리를 중심으로 거미줄 모양으로 금이 간다 (가운데는 잘게 부서져 바로 떨어짐)
+// - 금 간 왁스를 한 번 더 누르면: 그 파편들이 무대 바닥으로 떨어진다
 // - 덩어리를 끌면 덩어리가 돌아가고, 바깥(배경)을 끌면 카메라 시점이 돈다
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { PALETTE, SOAP, LABEL } from './share.js';
+import { PALETTE, LABEL } from './share.js';
 import { drawLabel, ensureFont } from './label.js';
-import { soapGeometry, buildWaxChunks, OUTER } from './geometry.js';
+import { soapGeometry, initialWaxPolys, webSeeds, splitPolys, buildPiece, OUTER } from './geometry.js';
+import { buildStage } from './stage.js';
 import * as sound from './sound.js';
 
-// 깨지는 정도: 꾹 눌러 금이 가는 반경 / 금 간 파편을 눌러 함께 떨어지는 반경. 20~30번 누르면 다 깨지도록 맞춘 값.
-const CRACK_R = 1.05;
-const DROP_R = 1.15;
-const FINISH_AT = 0.9; // 전체 파편이 이만큼 떨어지면 남은 것도 다 떨어진다
+// 깨지는 정도. 20~30번 누르면 다 깨지도록 맞춘 값.
+const WEB_R = 1.1; // 꾹 누른 자리에서 이 거리 안에 걸친 조각이 거미줄 모양으로 다시 갈라진다
+const CRUMB_R = 0.17; // 이 안쪽 부스러기는 바로 떨어진다
+const DROP_R = 1.1; // 금 간 파편을 누르면 이 반경 안의 금 간 파편이 함께 떨어진다
+const FINISH_AT = 0.9; // 왁스 넓이의 이만큼이 떨어지면 남은 것도 다 떨어진다
 const HOLD_MS = 420; // 이만큼 누르고 있으면 '꾹'
 
-// 클레이 눌림 (작을수록 단단한 클레이)
-const DENT_R = 0.5;
-const DENT_DEPTH = 0.03;
-const DENT_MAX = 0.07;
+// 클레이 눌림 (클수록 말랑한 클레이)
+const DENT_R = 0.62;
+const DENT_DEPTH = 0.06;
+const DENT_MAX = 0.16;
 
-const LUMP_Y = 0.3; // 덩어리가 떠 있는 높이 (바닥은 그 아래)
+const LUMP_Y = 0.35; // 덩어리가 떠 있는 높이
 const FLOOR_Y = -1.9;
+const TILT = 0.5; // 앞쪽으로 기운 각도 (좌우는 평평)
 
 const INTACT = 0, CRACKED = 1, FALLING = 2, GONE = 3;
 const UP = new THREE.Vector3(0, 1, 0);
@@ -31,7 +34,7 @@ export async function startPlay(data) {
   const $ = (id) => document.getElementById(id);
   const canvas = $('scene');
 
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -39,11 +42,13 @@ export async function startPlay(data) {
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
   const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x0d0a0b);
   const pmrem = new THREE.PMREMGenerator(renderer);
   scene.environment = pmrem.fromScene(new RoomEnvironment(renderer), 0.04).texture;
+  const ENV = 0.3; // 주변 반사는 약하게 (무대 조명 느낌)
 
   const camera = new THREE.PerspectiveCamera(35, 1, 0.1, 100);
-  const viewDir = new THREE.Vector3(0, 0.55, 0.84).normalize();
+  const viewDir = new THREE.Vector3(0, 0.42, 0.91).normalize();
 
   // 누르기·끌기 입력은 OrbitControls보다 먼저 받아야 해서 컨트롤을 만들기 전에 등록한다
   let press = null;
@@ -55,100 +60,110 @@ export async function startPlay(data) {
   const controls = new OrbitControls(camera, canvas);
   controls.enableDamping = true;
   controls.enablePan = false;
-  controls.minPolarAngle = 0.05;
-  controls.maxPolarAngle = 1.45;
-  controls.rotateSpeed = 0.8;
+  controls.minPolarAngle = 0.35;
+  controls.maxPolarAngle = 1.5;
+  controls.minAzimuthAngle = -0.8;
+  controls.maxAzimuthAngle = 0.8;
+  controls.rotateSpeed = 0.7;
 
-  // 빛과 바닥 그림자
-  const sun = new THREE.DirectionalLight(0xffffff, 1.5);
-  sun.position.set(2.5, 8, 3.5);
-  sun.castShadow = true;
-  sun.shadow.mapSize.set(1024, 1024);
-  Object.assign(sun.shadow.camera, { left: -6, right: 6, top: 6, bottom: -6, near: 1, far: 25 });
-  sun.shadow.bias = -0.0005;
-  scene.add(sun, new THREE.HemisphereLight(0xffffff, 0xeedccc, 0.35));
+  const stage = buildStage(scene, { floorY: FLOOR_Y, targetY: LUMP_Y });
 
-  const floor = new THREE.Mesh(new THREE.CircleGeometry(14, 48), new THREE.ShadowMaterial({ opacity: 0.14 }));
-  floor.rotation.x = -Math.PI / 2;
-  floor.position.y = FLOOR_Y;
-  floor.receiveShadow = true;
-  scene.add(floor);
-
-  // 덩어리 = 비누 + 왁스 파편. 비스듬히 기울어 떠 있다.
+  // 덩어리 = 비누 + 왁스 파편
   const lump = new THREE.Group();
   lump.position.y = LUMP_Y;
-  lump.rotation.set(0.42, -0.35, -0.2);
+  lump.rotation.x = TILT;
   scene.add(lump);
 
-  // 비누: 윗면에 글씨가 인쇄된 텍스처 (바탕은 클레이 색)
-  await ensureFont(data.f, data.t);
-  const tc = document.createElement('canvas');
-  tc.width = 1024;
-  tc.height = Math.round((1024 * LABEL.d) / LABEL.w);
-  const lc = document.createElement('canvas');
-  lc.width = tc.width;
-  lc.height = tc.height;
-  drawLabel(lc.getContext('2d'), lc.width, lc.height, data);
-  const tctx = tc.getContext('2d');
-  tctx.fillStyle = PALETTE.clay[data.c][0];
-  tctx.fillRect(0, 0, tc.width, tc.height);
-  tctx.drawImage(lc, 0, 0);
-  const tex = new THREE.CanvasTexture(tc);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+  // 글씨 텍스처: 클레이(숨길 글씨), 왁스 겉면(겉 글씨)
+  await ensureFont(data.f, data.t + (data.o || ''));
+  const makeTex = (bg, text) => {
+    const tc = document.createElement('canvas');
+    tc.width = 1024;
+    tc.height = Math.round((1024 * LABEL.d) / LABEL.w);
+    const ctx = tc.getContext('2d');
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, tc.width, tc.height);
+    if (text && text.trim()) {
+      const lc = document.createElement('canvas');
+      lc.width = tc.width;
+      lc.height = tc.height;
+      drawLabel(lc.getContext('2d'), lc.width, lc.height, { ...data, t: text });
+      ctx.drawImage(lc, 0, 0);
+    }
+    const tex = new THREE.CanvasTexture(tc);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+    return tex;
+  };
 
   const soapGeo = soapGeometry();
-  const soap = new THREE.Mesh(soapGeo, new THREE.MeshStandardMaterial({ map: tex, roughness: 0.8 }));
+  const soap = new THREE.Mesh(
+    soapGeo,
+    new THREE.MeshStandardMaterial({ map: makeTex(PALETTE.clay[data.c][0], data.t), roughness: 0.78, envMapIntensity: ENV }),
+  );
   soap.castShadow = soap.receiveShadow = true;
   lump.add(soap);
   const restPos = soapGeo.attributes.position.array.slice();
   const restNrm = soapGeo.attributes.normal.array.slice();
   const dents = new Float32Array(soapGeo.attributes.position.count);
 
-  // 왁스 파편들 (불투명)
   const waxMat = new THREE.MeshPhysicalMaterial({
-    color: PALETTE.wax[data.w][0],
+    map: makeTex(PALETTE.wax[data.w][0], data.o),
     vertexColors: true,
     roughness: 0.38,
     clearcoat: 0.5,
     clearcoatRoughness: 0.35,
+    envMapIntensity: ENV,
     side: THREE.DoubleSide,
   });
-  const chunks = buildWaxChunks(90).map((c) => {
-    const mesh = new THREE.Mesh(c.body, waxMat);
-    mesh.position.copy(c.center);
+
+  // 왁스 파편들
+  let chunks = [];
+  function addPiece(piece, state = INTACT) {
+    const mesh = new THREE.Mesh(piece.body, waxMat);
+    mesh.position.copy(piece.center);
     mesh.castShadow = mesh.receiveShadow = true;
     const chunk = {
-      ...c, mesh,
-      state: INTACT,
+      ...piece, mesh, state,
       vel: new THREE.Vector3(), spin: new THREE.Vector3(),
       delay: 0, pending: false, onFloor: false, rest: null, restY: 0, still: 0,
     };
     mesh.userData.chunk = chunk;
-    if (c.wall) {
-      const wall = new THREE.Mesh(c.wall, waxMat);
+    if (piece.wall) {
+      const wall = new THREE.Mesh(piece.wall, waxMat);
+      wall.castShadow = true;
       wall.userData.chunk = chunk;
       mesh.add(wall);
     }
     lump.add(mesh);
+    chunks.push(chunk);
     return chunk;
-  });
+  }
+  function removePiece(c) {
+    lump.remove(c.mesh);
+    c.body.dispose();
+    c.wall?.dispose();
+    chunks = chunks.filter((x) => x !== c);
+  }
+  for (const polys of initialWaxPolys(30)) addPiece(buildPiece(polys));
+  const totalArea = chunks.reduce((s, c) => s + c.area, 0);
 
-  // 화면 크기에 맞춰 카메라 거리 조정
+  // 화면 크기에 맞춰 카메라 거리와 커튼 위치 조정
   function resize() {
     const w = window.innerWidth, h = window.innerHeight;
     renderer.setSize(w, h, false);
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
     const tanV = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
-    const dist = Math.max(2.6 / tanV, 2.2 / (tanV * camera.aspect));
+    const dist = Math.max(4.4 / tanV, 3.2 / (tanV * camera.aspect));
     const dir = camera.position.lengthSq() > 0 ? camera.position.clone().sub(controls.target).normalize() : viewDir;
     camera.position.copy(controls.target).addScaledVector(dir, dist);
     controls.minDistance = dist * 0.5;
-    controls.maxDistance = dist * 1.6;
+    controls.maxDistance = dist * 1.2;
     controls.update();
+    stage.fit(tanV * camera.aspect * (dist + 1));
   }
-  controls.target.set(0, LUMP_Y - 0.3, 0);
+  controls.target.set(0, LUMP_Y - 0.4, 0);
   window.addEventListener('resize', resize);
   resize();
 
@@ -157,7 +172,8 @@ export async function startPlay(data) {
   const ndc = new THREE.Vector2();
   let finished = false;
   let presses = 0;
-  let squash = 1; // 덩어리가 눌려 살짝 납작해지는 정도 (1 = 그대로)
+  // 클레이가 눌렸다 출렁이며 돌아오는 정도 (스프링)
+  let squash = 1, squashV = 0, squashTarget = 1;
 
   function pick(x, y) {
     const r = canvas.getBoundingClientRect();
@@ -181,13 +197,11 @@ export async function startPlay(data) {
       // 다 깬 뒤에도 덩어리는 돌려 볼 수 있다 (누르기만 막는다)
       controls.enabled = false;
       const p = { x: e.clientX, y: e.clientY, lx: e.clientX, ly: e.clientY, t: performance.now(), mode: 'press', fired: finished };
-      // 손가락이 움직이지 않고 HOLD_MS 동안 누르고 있으면 '꾹'
       if (!finished) {
         p.timer = setTimeout(() => {
           if (press !== p || p.mode !== 'press') return;
           p.fired = true;
           longPress(p.x, p.y);
-          squash = 0.955;
         }, HOLD_MS);
       }
       press = p;
@@ -200,7 +214,10 @@ export async function startPlay(data) {
 
   function onMove(e) {
     if (!press || !e.isPrimary) return;
-    if (press.mode === 'press' && Math.hypot(e.clientX - press.x, e.clientY - press.y) > 9) press.mode = 'rotate';
+    if (press.mode === 'press' && Math.hypot(e.clientX - press.x, e.clientY - press.y) > 9) {
+      press.mode = 'rotate';
+      clearTimeout(press.timer);
+    }
     if (press.mode === 'rotate') rotateLump(e.clientX - press.lx, e.clientY - press.ly);
     press.lx = e.clientX;
     press.ly = e.clientY;
@@ -225,7 +242,7 @@ export async function startPlay(data) {
     lump.quaternion.premultiply(q);
   }
 
-  // 그냥 누름: 금 간 파편이면 떨어지고, 아니면 톡 소리만
+  // 그냥 누름: 금 간 파편이면 떨어지고, 아니면 말랑하게 살짝 눌렸다 돌아온다
   function shortPress(x, y) {
     const hit = pick(x, y);
     if (hit) shortHit(hit.chunk, lump.worldToLocal(hit.point));
@@ -235,12 +252,12 @@ export async function startPlay(data) {
       presses++;
       dropAround(chunk, local);
     } else {
-      squash = Math.min(squash, 0.992);
+      squashV -= 0.25;
       sound.tick();
     }
   }
 
-  // 꾹 누름: 금 간 파편이면 떨어지고, 아니면 주변에 금이 간다
+  // 꾹 누름: 금 간 파편이면 떨어지고, 아니면 거미줄 모양으로 금이 간다
   function longPress(x, y) {
     const hit = pick(x, y);
     if (hit) longHit(hit.chunk, lump.worldToLocal(hit.point));
@@ -248,19 +265,44 @@ export async function startPlay(data) {
   function longHit(chunk, local) {
     presses++;
     dent(local);
+    squashV -= 0.9;
     if (chunk && chunk.state === CRACKED) {
       dropAround(chunk, local);
       return;
     }
-    let n = 0;
-    for (const c of chunks) {
-      if (c.state !== INTACT) continue;
-      if (c === chunk || c.center.distanceTo(local) < CRACK_R) { crack(c); n++; }
+    shatter(local);
+  }
+
+  // 누른 자리 근처의 성한 조각들을 거미줄 모양으로 다시 자른다
+  function shatter(P) {
+    const pArr = [P.x, P.y, P.z];
+    const seeds = webSeeds(pArr);
+    const affected = chunks.filter((c) => c.state === INTACT && c.center.distanceTo(P) < WEB_R);
+    if (!affected.length) return;
+    let crumbs = 0, cracked = 0;
+    for (const old of affected) {
+      removePiece(old);
+      for (const polys of splitPolys(old.polys, seeds)) {
+        if (!polys.length) continue;
+        const piece = buildPiece(polys);
+        const c = addPiece(piece, CRACKED);
+        const d = piece.center.distanceTo(P);
+        if (d < CRUMB_R) {
+          fall(c, 0.6);
+          crumbs++;
+        } else {
+          // 가까울수록 더 들뜨고 비틀어진다 → 거미줄 금이 보인다
+          const k = Math.exp(-d / 0.55);
+          c.mesh.position.copy(c.center).addScaledVector(c.normal, 0.008 + 0.035 * k + Math.random() * 0.006);
+          const tw = 0.02 + 0.12 * k;
+          c.mesh.rotation.set((Math.random() - 0.5) * tw, (Math.random() - 0.5) * tw, (Math.random() - 0.5) * tw);
+          cracked++;
+        }
+      }
     }
-    if (n) {
-      sound.crack(n);
-      navigator.vibrate?.(n > 4 ? [18, 30, 18] : 18);
-    }
+    sound.crack(4 + crumbs);
+    navigator.vibrate?.([18, 30, 18]);
+    checkFinish();
   }
 
   function dropAround(hitChunk, local) {
@@ -275,14 +317,14 @@ export async function startPlay(data) {
   }
 
   function checkFinish() {
-    const gone = chunks.filter((c) => c.state >= FALLING).length;
-    if (!finished && gone / chunks.length >= FINISH_AT) {
+    const gone = chunks.filter((c) => c.state >= FALLING).reduce((s, c) => s + c.area, 0);
+    if (!finished && gone / totalArea >= FINISH_AT) {
       finished = true;
       setTimeout(finale, 300);
     }
   }
 
-  // 누른 자리의 클레이가 살짝 들어간다 (돌아오지 않음)
+  // 누른 자리의 클레이가 들어간다 (말랑해서 꽤 들어가고, 돌아오지 않음)
   function dent(p) {
     const pos = soapGeo.attributes.position;
     for (let i = 0; i < pos.count; i++) {
@@ -301,19 +343,12 @@ export async function startPlay(data) {
     soapGeo.computeVertexNormals();
   }
 
-  // 금 가기: 들뜨고 비틀어져 틈이 보인다
-  function crack(c) {
-    c.state = CRACKED;
-    c.mesh.position.copy(c.center).addScaledVector(c.normal, 0.03 + Math.random() * 0.025);
-    c.mesh.rotation.set((Math.random() - 0.5) * 0.12, (Math.random() - 0.5) * 0.12, (Math.random() - 0.5) * 0.12);
-  }
-
   // 떨어지기: 덩어리에서 떼어 내 바깥쪽으로 살짝 밀려나며 떨어진다
-  function fall(c) {
+  function fall(c, push = 1) {
     c.state = FALLING;
     scene.attach(c.mesh);
     const n = c.normal.clone().applyQuaternion(lump.quaternion);
-    c.vel.copy(n).multiplyScalar(0.7 + Math.random() * 0.7);
+    c.vel.copy(n).multiplyScalar((0.7 + Math.random() * 0.7) * push);
     c.vel.x += (Math.random() - 0.5) * 0.6;
     c.vel.z += (Math.random() - 0.5) * 0.6;
     c.vel.y += Math.random() * 0.6;
@@ -356,7 +391,7 @@ export async function startPlay(data) {
   function finale() {
     for (const c of chunks) {
       if (c.state >= FALLING) continue;
-      if (c.state === INTACT) crack(c);
+      c.state = CRACKED;
       c.pending = true;
       c.delay = Math.random() * 0.6;
     }
@@ -369,13 +404,6 @@ export async function startPlay(data) {
   // 버튼
   $('again').addEventListener('click', () => location.reload());
   $('make').addEventListener('click', () => (location.href = location.pathname));
-  let muted = false;
-  $('mute').addEventListener('click', () => {
-    muted = !muted;
-    sound.setMuted(muted);
-    $('mute').textContent = muted ? '🔇' : '🔊';
-    $('mute').setAttribute('aria-label', muted ? '소리 켜기' : '소리 끄기');
-  });
 
   // ---------- 매 프레임 ----------
   const clock = new THREE.Clock();
@@ -385,14 +413,15 @@ export async function startPlay(data) {
     const dt = Math.min(clock.getDelta(), 1 / 30);
     const time = clock.elapsedTime;
 
-    // 꾹 누르는 중: 점점 눌리다가 시간이 차면 깨진다
-    let target = 1;
+    // 꾹 누르는 동안 점점 눌린다. 놓거나 깨지면 출렁이며 돌아온다 (말랑한 클레이)
+    squashTarget = 1;
     if (press && press.mode === 'press' && !press.fired) {
-      const k = Math.min(1, (performance.now() - press.t) / HOLD_MS);
-      target = 1 - 0.03 * k;
+      squashTarget = 1 - 0.07 * Math.min(1, (performance.now() - press.t) / HOLD_MS);
     }
-    squash += (target - squash) * (1 - Math.exp(-14 * dt));
-    soap.scale.set(1 + (1 - squash) * 0.4, squash, 1 + (1 - squash) * 0.4);
+    squashV += ((squashTarget - squash) * 260 - squashV * 12) * dt;
+    squash += squashV * dt;
+    const bulge = 1 + (1 - squash) * 0.5;
+    soap.scale.set(bulge, squash, bulge);
 
     // 둥실 떠 있기
     lump.position.y = LUMP_Y + Math.sin(time * 1.1) * 0.04;
@@ -415,7 +444,7 @@ export async function startPlay(data) {
         m.quaternion.slerp(c.rest, k);
         m.position.y += (c.restY - m.position.y) * k;
         c.still += dt;
-        if (c.still > 1.5) c.state = GONE; // 멈춤: 그대로 바닥에 둔다
+        if (c.still > 1.5) { c.state = GONE; m.castShadow = false; } // 멈춤: 그대로 바닥에 둔다 (그림자 계산 생략)
         continue;
       }
       c.vel.y -= 9.8 * dt;
@@ -433,6 +462,7 @@ export async function startPlay(data) {
       }
     }
 
+    stage.update(time, camera);
     controls.update();
     renderer.render(scene, camera);
     requestAnimationFrame(frame);
@@ -444,11 +474,11 @@ export async function startPlay(data) {
   window.__wax = {
     get presses() { return presses; },
     get finished() { return finished; },
-    chunks, camera, canvas, lump,
+    get chunks() { return chunks; },
+    camera, canvas, lump,
     // 파편 c 한가운데를 눌러 본다 (long: 꾹)
     pressChunk(c, long) {
       if (long) longHit(c, c.center.clone()); else shortHit(c, c.center.clone());
     },
-    longPress, shortPress,
   };
 }

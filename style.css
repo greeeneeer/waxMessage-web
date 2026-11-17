@@ -39,7 +39,7 @@ button:disabled { opacity: 0.4; cursor: default; }
 .compose, .play { display: none; }
 body.mode-compose .compose { display: block; }
 body.mode-play .play { display: block; }
-body.mode-play { overflow: hidden; overscroll-behavior: none; }
+body.mode-play { overflow: hidden; overscroll-behavior: none; background: #0d0a0b; }
 
 /* 작성 화면 */
 .compose {
@@ -52,7 +52,10 @@ body.mode-play { overflow: hidden; overscroll-behavior: none; }
 .brand p { margin: 0; color: var(--muted); line-height: 1.5; font-size: 15px; }
 .notice { background: #ffe3e3; border-radius: 12px; padding: 10px 14px; text-align: center; }
 
-.preview { display: block; width: 100%; height: auto; margin: 16px 0 8px; }
+.previews { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 16px 0 8px; }
+.previews figure { margin: 0; }
+.previews canvas { display: block; width: 100%; height: auto; }
+.previews figcaption { text-align: center; font-size: 13px; color: var(--muted); margin-top: 2px; }
 
 .field { margin: 18px 0; }
 .field-title { display: block; font-family: var(--title); font-weight: 400; font-size: 18px; margin: 0 0 8px; }
@@ -130,8 +133,8 @@ body.mode-play { overflow: hidden; overscroll-behavior: none; }
 .loading {
   position: absolute; inset: 0;
   display: grid; place-items: center;
-  font-family: var(--title); font-size: 20px; color: var(--muted);
-  background: var(--bg);
+  font-family: var(--title); font-size: 20px; color: #b9a9a4;
+  background: #0d0a0b;
   transition: opacity 0.4s;
 }
 .loading.gone { opacity: 0; pointer-events: none; }

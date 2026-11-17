@@ -60,7 +60,9 @@ export function textOf(lines) {
 }
 
 export function encode(data) {
-  const json = JSON.stringify({ t: data.t, f: data.f, c: data.c, w: data.w, k: data.k });
+  const o = { t: data.t, f: data.f, c: data.c, w: data.w, k: data.k };
+  if (data.o && data.o.trim()) o.o = data.o; // 왁스 겉면 글씨 (있을 때만)
+  const json = JSON.stringify(o);
   let bin = '';
   new TextEncoder().encode(json).forEach((b) => (bin += String.fromCharCode(b)));
   return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
@@ -79,6 +81,7 @@ export function decode(code) {
     if (!t.trim()) return null;
     return {
       t,
+      o: textOf(String(o.o ?? '').split('\n')),
       f: clampIndex(o.f, FONTS),
       c: clampIndex(o.c, PALETTE.clay),
       w: clampIndex(o.w, PALETTE.wax),

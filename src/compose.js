@@ -1,4 +1,4 @@
-// 작성 화면: 글씨와 색을 고르고 보낼 링크를 만든다.
+// 작성 화면: 왁스 겉면 글씨, 숨길 글씨, 색을 고르고 보낼 링크를 만든다.
 import { PALETTE, FONTS, SOAP, LIMIT, encode, cleanLines, textOf } from './share.js';
 import { drawLabel, ensureFont } from './label.js';
 
@@ -21,38 +21,44 @@ export function startCompose() {
   const pick = (v, list) => (Number.isInteger(v) && v >= 0 && v < list.length ? v : 0);
   const state = {
     lines: cleanLines([d.lines?.[0] ?? '', d.lines?.[1] ?? '']),
+    outer: cleanLines([d.outer?.[0] ?? '', d.outer?.[1] ?? '']),
     f: pick(d.f, FONTS),
     c: pick(d.c, PALETTE.clay),
     w: pick(d.w, PALETTE.wax),
     k: pick(d.k, PALETTE.ink),
   };
 
-  const inputs = [$('l1'), $('l2')];
-  const counts = [$('n1'), $('n2')];
-  inputs.forEach((el, i) => {
-    el.value = state.lines[i];
-    el.addEventListener('input', () => {
-      // 한글 조합 중에는 건드리지 않는다
-      if (!el.dataset.composing) {
-        const clean = cleanLines([el.value])[0];
-        if (clean !== el.value) el.value = clean;
-      }
-      state.lines[i] = el.value;
-      update();
+  bindLines(['o1', 'o2'], ['m1', 'm2'], state.outer);
+  bindLines(['l1', 'l2'], ['n1', 'n2'], state.lines);
+
+  function bindLines(ids, countIds, target) {
+    const inputs = ids.map($);
+    inputs.forEach((el, i) => {
+      el.value = target[i];
+      el.addEventListener('input', () => {
+        // 한글 조합 중에는 건드리지 않는다
+        if (!el.dataset.composing) {
+          const clean = cleanLines([el.value])[0];
+          if (clean !== el.value) el.value = clean;
+        }
+        target[i] = el.value;
+        update();
+      });
+      el.addEventListener('compositionstart', () => (el.dataset.composing = '1'));
+      el.addEventListener('compositionend', () => {
+        delete el.dataset.composing;
+        el.dispatchEvent(new Event('input'));
+      });
+      el.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.isComposing) {
+          e.preventDefault();
+          if (i === 0) inputs[1].focus();
+          else el.blur();
+        }
+      });
     });
-    el.addEventListener('compositionstart', () => (el.dataset.composing = '1'));
-    el.addEventListener('compositionend', () => {
-      delete el.dataset.composing;
-      el.dispatchEvent(new Event('input'));
-    });
-    el.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && !e.isComposing) {
-        e.preventDefault();
-        if (i === 0) inputs[1].focus();
-        else el.blur();
-      }
-    });
-  });
+    target.countEls = countIds.map($);
+  }
 
   // 글꼴 버튼
   const fontBox = $('fonts');
@@ -116,70 +122,73 @@ export function startCompose() {
 
   // 미리보기와 링크 갱신
   let drawToken = 0;
-  async function drawPreview() {
+  async function drawPreviews() {
     const token = ++drawToken;
     const data = currentData();
-    await ensureFont(data.f, data.t);
+    await ensureFont(data.f, data.t + data.o);
     if (token !== drawToken) return;
-
-    const cv = $('preview');
-    const ctx = cv.getContext('2d');
-    const W = cv.width;
-    const H = cv.height;
-    ctx.clearRect(0, 0, W, H);
-
-    // 비누 (위에서 본 모습)
-    const pad = 24;
-    const w = W - pad * 2;
-    const h = w * (SOAP.d / SOAP.w);
-    const x = pad;
-    const y = (H - h) / 2;
-    const r = w * (SOAP.r / SOAP.w) * 1.4;
-    const clay = PALETTE.clay[data.c][0];
-
-    ctx.save();
-    ctx.shadowColor = 'rgba(80, 40, 30, 0.22)';
-    ctx.shadowBlur = 22;
-    ctx.shadowOffsetY = 10;
-    roundRect(ctx, x, y, w, h, r);
-    ctx.fillStyle = clay;
-    ctx.fill();
-    ctx.restore();
-
-    const g = ctx.createLinearGradient(x, y, x + w * 0.3, y + h);
-    g.addColorStop(0, 'rgba(255,255,255,0.35)');
-    g.addColorStop(0.5, 'rgba(255,255,255,0)');
-    g.addColorStop(1, 'rgba(0,0,0,0.08)');
-    roundRect(ctx, x, y, w, h, r);
-    ctx.fillStyle = g;
-    ctx.fill();
-
-    // 글씨
-    const lw = w * (1 - (2 * SOAP.r) / SOAP.w);
-    const lh = h * (1 - (2 * SOAP.r) / SOAP.d);
-    const lc = document.createElement('canvas');
-    lc.width = 1024;
-    lc.height = Math.round((1024 * lh) / lw);
-    drawLabel(lc.getContext('2d'), lc.width, lc.height, data, { placeholder: '여기에 글씨가\n보여요' });
-    ctx.drawImage(lc, x + (w - lw) / 2, y + (h - lh) / 2, lw, lh);
+    drawSoapTop($('previewOuter'), PALETTE.wax[data.w][0], { ...data, t: data.o }, '겉에 보일\n글씨');
+    drawSoapTop($('preview'), PALETTE.clay[data.c][0], data, '숨길 글씨');
   }
 
   function currentData() {
-    return { t: textOf(state.lines), f: state.f, c: state.c, w: state.w, k: state.k };
+    return { t: textOf(state.lines), o: textOf(state.outer), f: state.f, c: state.c, w: state.w, k: state.k };
   }
 
   function update() {
-    saveDraft(state);
-    state.lines.forEach((l, i) => (counts[i].textContent = `${Array.from(l).length}/${LIMIT.perLine}`));
+    saveDraft({ lines: [...state.lines], outer: [...state.outer], f: state.f, c: state.c, w: state.w, k: state.k });
+    for (const target of [state.lines, state.outer]) {
+      target.forEach((l, i) => (target.countEls[i].textContent = `${Array.from(l).length}/${LIMIT.perLine}`));
+    }
     const data = currentData();
     const ok = !!data.t.trim();
     $('link').value = ok ? `${location.origin}${location.pathname}#${encode(data)}` : '';
-    $('link').placeholder = '글씨를 쓰면 보낼 링크가 생겨요';
+    $('link').placeholder = '숨길 글씨를 쓰면 보낼 링크가 생겨요';
     ['copy', 'share', 'try'].forEach((id) => ($(id).disabled = !ok));
-    drawPreview();
+    drawPreviews();
   }
 
   update();
+}
+
+// 위에서 본 비누 한 면 + 인쇄된 글씨
+function drawSoapTop(cv, color, data, placeholder) {
+  const ctx = cv.getContext('2d');
+  const W = cv.width;
+  const H = cv.height;
+  ctx.clearRect(0, 0, W, H);
+
+  const pad = 18;
+  const w = W - pad * 2;
+  const h = w * (SOAP.d / SOAP.w);
+  const x = pad;
+  const y = (H - h) / 2;
+  const r = w * (SOAP.r / SOAP.w) * 1.4;
+
+  ctx.save();
+  ctx.shadowColor = 'rgba(80, 40, 30, 0.22)';
+  ctx.shadowBlur = 16;
+  ctx.shadowOffsetY = 8;
+  roundRect(ctx, x, y, w, h, r);
+  ctx.fillStyle = color;
+  ctx.fill();
+  ctx.restore();
+
+  const g = ctx.createLinearGradient(x, y, x + w * 0.3, y + h);
+  g.addColorStop(0, 'rgba(255,255,255,0.35)');
+  g.addColorStop(0.5, 'rgba(255,255,255,0)');
+  g.addColorStop(1, 'rgba(0,0,0,0.08)');
+  roundRect(ctx, x, y, w, h, r);
+  ctx.fillStyle = g;
+  ctx.fill();
+
+  const lw = w * (1 - (2 * SOAP.r) / SOAP.w);
+  const lh = h * (1 - (2 * SOAP.r) / SOAP.d);
+  const lc = document.createElement('canvas');
+  lc.width = 1024;
+  lc.height = Math.round((1024 * lh) / lw);
+  drawLabel(lc.getContext('2d'), lc.width, lc.height, data, { placeholder });
+  ctx.drawImage(lc, x + (w - lw) / 2, y + (h - lh) / 2, lw, lh);
 }
 
 function mark(box, i) {
