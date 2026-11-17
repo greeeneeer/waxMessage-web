@@ -24,10 +24,10 @@ const FINISH_AT = 0.9; // 왁스 넓이의 이만큼이 떨어지면 남은 것�
 const HOLD_MS = 420; // 이만큼 누르고 있으면 '꾹'
 
 // 왁뿌 버튼: 크기(본 덩어리 대비), 자리 (덩어리보다 조금 아래, 카메라 쪽)
-const BTN_SCALE = 0.38;
+const BTN_SCALE = 0.3;
 const BTN_Y = -1.15;
 const BTN_Z = 2.0;
-const BTN_GAP_X = 0.84;
+const BTN_GAP_X = 0.68;
 const REVEAL_AT = 0.95; // 클레이 글씨 획의 이만큼이 드러나면 버튼이 올라온다
 
 const LUMP_Y = 0.35; // 덩어리가 떠 있는 높이
@@ -465,7 +465,7 @@ export async function startPlay(data) {
       group.position.set(x, FLOOR_Y - 1.2, BTN_Z);
       group.visible = false;
       scene.add(group);
-      const btn = { group, action, pressed: false, rise: -1, delay: i * 0.18, from: FLOOR_Y - 1.2 };
+      const btn = { group, action, pressed: false, rise: -1, delay: 0, from: FLOOR_Y - 1.2 };
       const clay = new THREE.Mesh(soapGeometry(), clayMat);
       clay.castShadow = clay.receiveShadow = true;
       clay.userData.button = btn;

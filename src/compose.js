@@ -235,7 +235,7 @@ function drawSoapTop(cv, color, data, placeholder) {
   const r = w * (SOAP.r / SOAP.w) * 1.4;
 
   ctx.save();
-  ctx.shadowColor = 'rgba(80, 40, 30, 0.22)';
+  ctx.shadowColor = 'rgba(0, 0, 0, 0.6)';
   ctx.shadowBlur = 16;
   ctx.shadowOffsetY = 8;
   roundRect(ctx, x, y, w, h, r);
