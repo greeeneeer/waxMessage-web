@@ -3,7 +3,6 @@
 // - 덩어리를 꾹 누르면: 누른 자리를 중심으로 거미줄 모양으로 금이 간다 (가운데는 부서져 바로 떨어짐)
 // - 꾹 누른 채로 끌면: 지나가는 선을 따라 파사삭 연달아 부서진다
 // - 금 간 왁스를 한 번 더 누르면: 그 파편들이 무대 바닥으로 떨어진다
-// - 겉 왁스가 떨어져 드러난 속 왁스는 톡 누르기만 해도 부서진다
 // - 끌면(꾹 누르기 전에 움직이거나 바깥을 끌면) 카메라 시점만 돈다. 덩어리는 돌지 않는다.
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
@@ -25,8 +24,8 @@ const HOLD_MS = 420; // 이만큼 누르고 있으면 '꾹'
 
 // 클레이 눌림 (클수록 말랑한 클레이)
 const DENT_R = 0.62;
-const DENT_DEPTH = 0.06;
-const DENT_MAX = 0.16;
+const DENT_DEPTH = 0.04;
+const DENT_MAX = 0.1;
 
 const LUMP_Y = 0.35; // 덩어리가 떠 있는 높이
 const FLOOR_Y = -1.9;
@@ -145,7 +144,43 @@ export async function startPlay(data) {
     mesh.userData.chunk = chunk;
     lump.add(mesh);
     chunks.push(chunk);
+    markCover(chunk);
     return chunk;
+  }
+
+  // 클레이 글씨가 얼마나 드러났는지: 글씨 영역에 점을 고르게 찍고, 점마다 그 위를 덮은 겹별 조각을 기억한다
+  const SAMPLES = [];
+  for (let i = 0; i < 16; i++) {
+    for (let k = 0; k < 10; k++) {
+      SAMPLES.push([((i + 0.5) / 16 - 0.5) * LABEL.w * 0.94, ((k + 0.5) / 10 - 0.5) * LABEL.d * 0.94]);
+    }
+  }
+  const cover = layers.map(() => new Array(SAMPLES.length).fill(null)); // cover[겹][점] = 그 점을 덮은 조각
+  function markCover(chunk) {
+    const top = waxLayers[chunk.layer].box.h / 2;
+    for (const { p } of chunk.polys) {
+      if (p.reduce((s, q) => s + q[1], 0) / p.length < top - 0.05) continue; // 윗면 다각형만
+      SAMPLES.forEach(([x, z], si) => {
+        let sign = 0;
+        for (let a = 0; a < p.length; a++) {
+          const A = p[a], B = p[(a + 1) % p.length];
+          const cr = (B[0] - A[0]) * (z - A[2]) - (B[2] - A[2]) * (x - A[0]);
+          if (Math.abs(cr) < 1e-9) continue;
+          if (sign === 0) sign = Math.sign(cr);
+          else if (Math.sign(cr) !== sign) return;
+        }
+        cover[chunk.layer][si] = chunk;
+      });
+    }
+  }
+  let revealed = false;
+  function checkReveal() {
+    if (revealed) return;
+    const open = SAMPLES.filter((_, si) => cover.every((row) => !row[si] || row[si].state >= FALLING)).length;
+    if (open / SAMPLES.length >= 0.95) {
+      revealed = true;
+      setTimeout(() => $('done').classList.add('show'), 700);
+    }
   }
   function removePiece(c) {
     lump.remove(c.mesh);
@@ -181,8 +216,6 @@ export async function startPlay(data) {
   const ndc = new THREE.Vector2();
   let finished = false;
   let presses = 0;
-  // 클레이가 눌렸다 출렁이며 돌아오는 정도 (스프링)
-  let squash = 1, squashV = 0, squashTarget = 1;
 
   function pick(x, y) {
     const r = canvas.getBoundingClientRect();
@@ -268,11 +301,10 @@ export async function startPlay(data) {
       shatter(h.local, h.chunk.layer, 0.75, SCRUB_R, true);
     } else {
       dent(h.local, 0.5);
-      squashV -= 0.4;
     }
   }
 
-  // 그냥 누름: 금 간 파편이면 떨어지고, 아니면 말랑하게 살짝 눌렸다 돌아온다
+  // 그냥 누름: 금 간 파편이면 떨어지고, 성한 왁스(겉·속 모두)는 깨지지 않는다
   function shortPress(x, y) {
     const h = pick(x, y);
     if (h) shortHit(h.chunk, h.local);
@@ -281,13 +313,7 @@ export async function startPlay(data) {
     if (chunk && chunk.state === CRACKED) {
       presses++;
       dropAround(chunk, local, DROP_R);
-    } else if (chunk && chunk.layer < waxLayers.length - 1) {
-      // 겉 왁스가 떨어져 드러난 속 왁스는 톡 눌러도 부서진다
-      presses++;
-      if (chunk.layer === 0) dent(local, 0.6);
-      shatter(local, chunk.layer, 1, CRUMB_R);
     } else {
-      squashV -= 0.25;
       sound.tick();
     }
   }
@@ -295,7 +321,6 @@ export async function startPlay(data) {
   // 꾹 누름: 금 간 파편이면 떨어지고, 성한 왁스면 거미줄 모양으로 금이 간다, 클레이면 눌린다
   function longHit(chunk, local) {
     presses++;
-    squashV -= 0.9;
     if (!chunk) { dent(local); return; }
     if (chunk.state === CRACKED) { dropAround(chunk, local, DROP_R); return; }
     if (chunk.layer === 0) dent(local);
@@ -345,6 +370,7 @@ export async function startPlay(data) {
   }
 
   function checkFinish() {
+    checkReveal();
     const gone = chunks.filter((c) => c.state >= FALLING).reduce((s, c) => s + c.area, 0);
     if (!finished && gone / totalArea >= FINISH_AT) {
       finished = true;
@@ -352,7 +378,7 @@ export async function startPlay(data) {
     }
   }
 
-  // 누른 자리의 클레이가 들어간다 (말랑해서 꽤 들어가고, 돌아오지 않음)
+  // 꾹 누른 자리의 클레이가 짓눌려 살짝 들어간다 (돌아오지 않음, 출렁임 없음)
   function dent(p, amount = 1) {
     const pos = soapGeo.attributes.position;
     for (let i = 0; i < pos.count; i++) {
@@ -426,7 +452,6 @@ export async function startPlay(data) {
     sound.crack(6);
     sound.crack(4, 0.2);
     navigator.vibrate?.([20, 40, 20]);
-    setTimeout(() => $('done').classList.add('show'), 1900);
   }
 
   // 버튼
@@ -441,16 +466,6 @@ export async function startPlay(data) {
     const dt = Math.min(clock.getDelta(), 1 / 30);
     const time = clock.elapsedTime;
 
-    // 꾹 누르는 동안 점점 눌린다. 놓거나 깨지면 출렁이며 돌아온다 (말랑한 클레이)
-    squashTarget = 1;
-    if (press && press.mode === 'press' && !press.fired) {
-      squashTarget = 1 - 0.07 * Math.min(1, (performance.now() - press.t) / HOLD_MS);
-    }
-    squashV += ((squashTarget - squash) * 260 - squashV * 12) * dt;
-    squash += squashV * dt;
-    const bulge = 1 + (1 - squash) * 0.5;
-    soap.scale.set(bulge, squash, bulge);
-
     // 둥실 떠 있기
     lump.position.y = LUMP_Y + Math.sin(time * 1.1) * 0.04;
     lump.updateMatrixWorld();
@@ -459,7 +474,7 @@ export async function startPlay(data) {
       if (c.state !== FALLING) {
         if (c.pending) {
           c.delay -= dt;
-          if (c.delay <= 0) { c.pending = false; fall(c); }
+          if (c.delay <= 0) { c.pending = false; fall(c); checkReveal(); }
         }
         continue;
       }
