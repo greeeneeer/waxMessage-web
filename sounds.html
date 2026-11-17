@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>소리 고르기</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;800&display=swap" />
+  <style>
+    :root { --bg: #0d0a0b; --ink: #f4e9da; --muted: #a8968d; --gold: #e7c27d; --card: #1b1416; --line: #3b2b2b; --accent: #b3122b; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; color: var(--ink); font-family: 'Noto Sans KR', system-ui, sans-serif;
+      background: radial-gradient(ellipse 55% 38% at 50% 0%, rgba(255, 236, 205, 0.18), transparent 75%), var(--bg);
+      background-attachment: fixed;
+    }
+    main { max-width: 520px; margin: 0 auto; padding: 24px 16px 48px; }
+    h1 { font-weight: 800; color: var(--gold); text-align: center; margin: 8px 0 20px; }
+    section { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 14px; margin-bottom: 14px; }
+    h2 { font-size: 17px; font-weight: 800; margin: 0 0 10px; }
+    button {
+      display: flex; align-items: center; gap: 10px; width: 100%; text-align: left;
+      font: inherit; font-size: 16px; color: var(--ink); background: #241a1c;
+      border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; margin-bottom: 8px; cursor: pointer;
+    }
+    button:active, button.playing { border-color: var(--gold); }
+    .no { flex: none; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; background: var(--accent); font-weight: 800; font-size: 14px; }
+    .now { margin-left: auto; font-size: 12px; color: var(--gold); }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>소리 고르기</h1>
+    <div id="list"></div>
+  </main>
+  <script type="module">
+    import { VARIANTS, toBuffer } from './src/sound-variants.js';
+    import { CHOICE } from './src/sound.js';
+
+    let ctx = null;
+    const list = document.getElementById('list');
+    for (const [key, group] of Object.entries(VARIANTS)) {
+      const sec = document.createElement('section');
+      const h = document.createElement('h2');
+      h.textContent = group.title;
+      sec.append(h);
+      group.list.forEach((v, i) => {
+        const b = document.createElement('button');
+        b.innerHTML = `<span class="no">${i + 1}</span><span></span>`;
+        b.children[1].textContent = v.name;
+        if (CHOICE[key] === i) {
+          const now = document.createElement('span');
+          now.className = 'now';
+          now.textContent = '지금 쓰는 소리';
+          b.append(now);
+        }
+        b.addEventListener('click', () => {
+          ctx ??= new (window.AudioContext || window.webkitAudioContext)();
+          ctx.resume();
+          const src = ctx.createBufferSource();
+          src.buffer = toBuffer(ctx, v.make(ctx.sampleRate));
+          src.connect(ctx.destination);
+          src.start();
+          b.classList.add('playing');
+          src.onended = () => b.classList.remove('playing');
+        });
+        sec.append(b);
+      });
+      list.append(sec);
+    }
+  </script>
+</body>
+</html>

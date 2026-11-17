@@ -535,7 +535,7 @@ export async function startPlay(data) {
       const stream = canvas.captureStream(30);
       const audio = sound.audioTrack();
       if (audio) stream.addTrack(audio);
-      const types = ['video/mp4;codecs=avc1.42E01E,mp4a.40.2', 'video/mp4', 'video/webm;codecs=vp9,opus', 'video/webm'];
+      const types = ['video/mp4;codecs=avc3.42E01E,mp4a.40.2', 'video/mp4;codecs=avc1.42E01E,mp4a.40.2', 'video/mp4', 'video/webm;codecs=vp9,opus', 'video/webm'];
       const mimeType = types.find((t) => MediaRecorder.isTypeSupported(t));
       recorder = new MediaRecorder(stream, mimeType ? { mimeType, videoBitsPerSecond: 6_000_000 } : undefined);
       recorder.ondataavailable = (e) => { if (e.data.size) recChunks.push(e.data); };
