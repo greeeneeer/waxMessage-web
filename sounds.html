@@ -47,7 +47,7 @@
         const b = document.createElement('button');
         b.innerHTML = `<span class="no">${i + 1}</span><span></span>`;
         b.children[1].textContent = v.name;
-        if (CHOICE[key] === i) {
+        if ([CHOICE[key]].flat().includes(i)) {
           const now = document.createElement('span');
           now.className = 'now';
           now.textContent = '지금 쓰는 소리';

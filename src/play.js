@@ -514,6 +514,7 @@ export async function startPlay(data) {
 
   // 글씨가 드러났을 때: 휘파람·환호·컨페티, 그리고 버튼이 올라온다
   function celebrate() {
+    sound.stopRoll();
     sound.whistle();
     sound.cheer(0.15);
     confetti.start();

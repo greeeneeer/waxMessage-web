@@ -86,6 +86,32 @@ function timpani(d, sr, t0, amp, f0, decay) {
     d[i] += amp * ((Math.sin(ph) + 0.45 * Math.sin(ph * 1.5) + 0.25 * Math.sin(ph * 2.02)) * env + (Math.random() * 2 - 1) * Math.exp(-t / 0.006) * 0.5);
   }
 }
+// 스네어 한 번
+function snare(d, sr, t0, amp) {
+  noiseBurst(d, sr, t0, amp, 0.035, biquad('bp', 2200, 0.6, sr));
+  ping(d, sr, t0, amp * 0.4, 190, 0.03);
+}
+// 스네어 롤: 처음엔 크게, 점점 잔잔해진다 (introSec 동안 1 → bgLevel)
+export const ROLL_BG = 0.22;
+function snareIntro(sr, introSec = 2.6) {
+  const d = buf(sr, introSec + 0.15);
+  for (let t = 0; t < introSec; t += 1 / 24) {
+    const k = t / introSec;
+    snare(d, sr, t + rnd(-0.002, 0.002), (ROLL_BG + (1 - ROLL_BG) * (1 - k) ** 1.6) * rnd(0.85, 1.15));
+  }
+  return normalize(d, 0.85);
+}
+// 배경에 계속 깔리는 잔잔한 롤. 이어 붙여 반복해도 끊기지 않게: 정확히 1/24초 간격, 끝에서 넘친 울림은 앞쪽에 겹친다
+function snareLoop(sr, sec = 2) {
+  const len = Math.floor(sr * sec);
+  const tmp = new Float32Array(len + Math.floor(sr * 0.3));
+  const step = len / 48; // 2초에 48번 = 1초에 24번
+  for (let k = 0; k < 48; k++) snare(tmp, sr, (k * step) / sr, rnd(0.85, 1.15));
+  const d = tmp.slice(0, len);
+  for (let i = len; i < tmp.length; i++) d[i - len] += tmp[i];
+  return normalize(d, 0.85);
+}
+
 function crackles(d, sr, n, spread, ampMax, filter) {
   for (let k = 0; k < n; k++) {
     const t0 = 0.004 + Math.random() ** 2 * spread;
@@ -99,7 +125,7 @@ export const VARIANTS = {
     title: '왁스 깨지는 소리',
     list: [
       {
-        name: '탁 + 바사삭 (지금 소리)',
+        name: '탁 + 바사삭',
         make(sr) {
           const d = buf(sr, 0.4);
           const hp = biquad('hp', 1500, 0.7, sr);
@@ -158,7 +184,7 @@ export const VARIANTS = {
     title: '파편이 바닥에 떨어지는 소리',
     list: [
       {
-        name: '틱 (지금 소리)',
+        name: '틱',
         make(sr) {
           const d = buf(sr, 0.08);
           const n = 1 + Math.floor(Math.random() * 3);
@@ -199,7 +225,7 @@ export const VARIANTS = {
     title: '시작할 때 (두구두구… 둥!)',
     list: [
       {
-        name: '팀파니 빠른 롤 + 둥 (지금 소리)',
+        name: '팀파니 빠른 롤 + 둥',
         make(sr) {
           const d = buf(sr, 3.2);
           const end = 2.35;
@@ -248,6 +274,22 @@ export const VARIANTS = {
           return [normalize(d, 0.9)];
         },
       },
+      {
+        name: '스네어 롤: 크게 시작 → 잔잔하게 계속 깔림',
+        // 게임에서는 intro를 한 번 틀고, 이어서 loop를 글씨가 드러날 때까지 반복한다
+        intro: (sr) => snareIntro(sr),
+        loop: (sr) => snareLoop(sr),
+        make(sr) {
+          // 미리 듣기: 시작 부분 + 배경으로 깔리는 4초
+          const intro = snareIntro(sr);
+          const loop = snareLoop(sr);
+          const d = buf(sr, intro.length / sr + 4);
+          d.set(intro);
+          const off = Math.round(sr * 2.6);
+          for (let i = 0; i < sr * 4; i++) d[off + i] += loop[i % loop.length] * ROLL_BG;
+          return [d];
+        },
+      },
     ],
   },
 
@@ -255,7 +297,7 @@ export const VARIANTS = {
     title: '글씨가 드러날 때 휘파람',
     list: [
       {
-        name: '휘익~ 휘이익 (지금 소리)',
+        name: '휘익~ 휘이익',
         make(sr) {
           const d = buf(sr, 1.3);
           const glide = (t0, len, a, b, c) => {
@@ -270,6 +312,25 @@ export const VARIANTS = {
           };
           glide(0, 0.32, 900, 2300, 2100);
           glide(0.42, 0.75, 1300, 2700, 950);
+          return [normalize(d, 0.6)];
+        },
+      },
+      {
+        name: '휘익~ 휘이익 (앞뒤 음 바꿈)',
+        make(sr) {
+          const d = buf(sr, 1.3);
+          const glide = (t0, len, a, b, c) => {
+            const s0 = Math.floor(t0 * sr);
+            let ph = 0;
+            for (let i = s0; i < s0 + len * sr && i < d.length; i++) {
+              const t = (i - s0) / sr, u = t / len;
+              const f = (u < 0.45 ? a * (b / a) ** (u / 0.45) : b * (c / b) ** ((u - 0.45) / 0.55)) + 18 * Math.sin(t * TAU * 7);
+              ph += (TAU * f) / sr;
+              d[i] += Math.sin(ph) * Math.min(1, t / 0.04) * Math.min(1, (len - t) / 0.08);
+            }
+          };
+          glide(0, 0.32, 1300, 2700, 950);
+          glide(0.42, 0.75, 900, 2300, 2100);
           return [normalize(d, 0.6)];
         },
       },
@@ -329,7 +390,7 @@ export const VARIANTS = {
     title: '글씨가 드러날 때 환호',
     list: [
       {
-        name: '웅성 환호 + 박수 (지금 소리)',
+        name: '웅성 환호 + 박수',
         make(sr) {
           const out = [];
           for (let ch = 0; ch < 2; ch++) {
