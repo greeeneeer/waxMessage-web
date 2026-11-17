@@ -6,7 +6,7 @@ export const SOAP = { w: 3.2, h: 1.1, d: 2.2, r: 0.34 };
 // 글씨가 들어가는 평평한 윗면의 가로세로
 export const LABEL = { w: SOAP.w - 2 * SOAP.r, d: SOAP.d - 2 * SOAP.r };
 
-export const MAX_LAYERS = 3; // 왁스는 최대 세 겹
+export const MAX_LAYERS = 5; // 왁스는 최대 다섯 겹
 
 export const PALETTE = {
   clay: [
@@ -75,7 +75,8 @@ export function cleanText(v) {
 // data.k는 클레이(숨길 글씨) 글씨 색.
 //
 // 링크 형식 (짧게 만들려고 비트 단위로 촘촘히 담는다):
-//   버전 2비트(10) · 글꼴·클레이 색·클레이 글씨 색 각 5비트 · 겹 수-1 2비트 · 클레이 글씨
+//   버전 2비트(11) · 글꼴·클레이 색·클레이 글씨 색 각 5비트 · 겹 수-1 3비트 · 클레이 글씨
+//   (버전 10은 겹 수-1이 2비트였던 예전 형식. 읽기만 한다)
 //   · 겹마다 [왁스 색 5비트 · 글씨 색 5비트 · 글씨]
 //   글씨 한 글자: 한글 음절 = 0 + 14비트(가~힣 순번) / 영문·숫자·기호 = 10 + 7비트 / 그 밖 = 11 + 21비트.
 //   글 끝 = 10 + 0000000.
@@ -149,12 +150,12 @@ const fromB64url = (code) => {
 
 export function encode(data) {
   const w = new BitWriter();
-  w.put(0b10, 2); // 버전
+  w.put(0b11, 2); // 버전
   w.put(data.f, 5);
   w.put(data.c, 5);
   w.put(data.k, 5);
   const layers = data.layers.slice(0, MAX_LAYERS);
-  w.put(layers.length - 1, 2);
+  w.put(layers.length - 1, 3);
   w.text(cleanText(data.t));
   for (const l of layers) {
     w.put(l.w, 5);
@@ -177,11 +178,12 @@ export function decode(code) {
 
 function decodeBits(code) {
   const r = new BitReader(fromB64url(code));
-  if (r.get(2) !== 0b10) return null;
+  const ver = r.get(2);
+  if (ver !== 0b10 && ver !== 0b11) return null;
   const f = clampIndex(r.get(5), FONTS);
   const c = clampIndex(r.get(5), PALETTE.clay);
   const k = clampIndex(r.get(5), PALETTE.ink);
-  const n = Math.min(r.get(2) + 1, MAX_LAYERS);
+  const n = Math.min(r.get(ver === 0b11 ? 3 : 2) + 1, MAX_LAYERS);
   const t = cleanText(r.text());
   const layers = [];
   for (let i = 0; i < n; i++) {
