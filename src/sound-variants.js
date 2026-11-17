@@ -293,99 +293,6 @@ export const VARIANTS = {
     ],
   },
 
-  whistle: {
-    title: '글씨가 드러날 때 휘파람',
-    list: [
-      {
-        name: '휘익~ 휘이익',
-        make(sr) {
-          const d = buf(sr, 1.3);
-          const glide = (t0, len, a, b, c) => {
-            const s0 = Math.floor(t0 * sr);
-            let ph = 0;
-            for (let i = s0; i < s0 + len * sr && i < d.length; i++) {
-              const t = (i - s0) / sr, u = t / len;
-              const f = (u < 0.45 ? a * (b / a) ** (u / 0.45) : b * (c / b) ** ((u - 0.45) / 0.55)) + 18 * Math.sin(t * TAU * 7);
-              ph += (TAU * f) / sr;
-              d[i] += Math.sin(ph) * Math.min(1, t / 0.04) * Math.min(1, (len - t) / 0.08);
-            }
-          };
-          glide(0, 0.32, 900, 2300, 2100);
-          glide(0.42, 0.75, 1300, 2700, 950);
-          return [normalize(d, 0.6)];
-        },
-      },
-      {
-        name: '휘이익~ 휘익 (앞뒤 음·길이 바꿈)',
-        make(sr) {
-          const d = buf(sr, 1.3);
-          const glide = (t0, len, a, b, c) => {
-            const s0 = Math.floor(t0 * sr);
-            let ph = 0;
-            for (let i = s0; i < s0 + len * sr && i < d.length; i++) {
-              const t = (i - s0) / sr, u = t / len;
-              const f = (u < 0.45 ? a * (b / a) ** (u / 0.45) : b * (c / b) ** ((u - 0.45) / 0.55)) + 18 * Math.sin(t * TAU * 7);
-              ph += (TAU * f) / sr;
-              d[i] += Math.sin(ph) * Math.min(1, t / 0.04) * Math.min(1, (len - t) / 0.08);
-            }
-          };
-          glide(0, 0.75, 1300, 2700, 950);
-          glide(0.85, 0.32, 900, 2300, 2100);
-          return [normalize(d, 0.6)];
-        },
-      },
-      {
-        name: '손가락 휘파람 (높고 길게)',
-        make(sr) {
-          const d = buf(sr, 1.2);
-          const bp = biquad('bp', 3000, 3, sr);
-          let ph = 0;
-          for (let i = 0; i < d.length; i++) {
-            const t = i / sr;
-            const f = 2500 + 900 * Math.min(1, t / 0.5) + 25 * Math.sin(t * TAU * 6);
-            ph += (TAU * f) / sr;
-            const env = Math.min(1, t / 0.06) * Math.min(1, (1.15 - t) / 0.15);
-            d[i] += (Math.sin(ph) * 0.85 + bp(Math.random() * 2 - 1) * 0.6) * Math.max(0, env);
-          }
-          return [normalize(d, 0.55)];
-        },
-      },
-      {
-        name: '짧게 휙휙',
-        make(sr) {
-          const d = buf(sr, 0.7);
-          for (const t0 of [0, 0.28]) {
-            const s0 = Math.floor(t0 * sr);
-            let ph = 0;
-            for (let i = s0; i < s0 + 0.2 * sr; i++) {
-              const t = (i - s0) / sr;
-              const f = 1500 * (2800 / 1500) ** (t / 0.2);
-              ph += (TAU * f) / sr;
-              d[i] += Math.sin(ph) * Math.min(1, t / 0.02) * Math.min(1, (0.2 - t) / 0.05);
-            }
-          }
-          return [normalize(d, 0.6)];
-        },
-      },
-      {
-        name: '호루라기 삐리릭',
-        make(sr) {
-          const d = buf(sr, 1.0);
-          let ph = 0;
-          for (let i = 0; i < d.length; i++) {
-            const t = i / sr;
-            const f = 2900 + 120 * Math.sin(t * TAU * 35);
-            ph += (TAU * f) / sr;
-            const am = 0.6 + 0.4 * Math.sin(t * TAU * 35);
-            const env = Math.min(1, t / 0.02) * Math.min(1, (0.95 - t) / 0.1);
-            d[i] += Math.sin(ph) * am * Math.max(0, env) + (Math.random() * 2 - 1) * 0.08 * Math.max(0, env);
-          }
-          return [normalize(d, 0.5)];
-        },
-      },
-    ],
-  },
-
   cheer: {
     title: '글씨가 드러날 때 환호',
     list: [
@@ -436,7 +343,8 @@ export const VARIANTS = {
           const out = [];
           for (let ch = 0; ch < 2; ch++) {
             const d = buf(sr, 4.5);
-            for (let v = 0; v < 14; v++) voice(d, sr, rnd(0, 0.4), rnd(1.6, 3.6), rnd(160, 480), 0.22);
+            const low = 2 ** (-5 / 12); // 5반음 낮게
+            for (let v = 0; v < 14; v++) voice(d, sr, rnd(0, 0.4), rnd(1.6, 3.6), rnd(160, 480) * low, 0.22);
             for (let k = 0; k < 220; k++) {
               const t = rnd(0.15, 3.8);
               clap(d, sr, t, rnd(0.45, 0.95) * Math.max(0, 1 - Math.max(0, t - 2.8) / 1.0));

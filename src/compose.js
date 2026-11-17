@@ -1,5 +1,5 @@
 // 작성 화면: 숨길 글씨, 왁스 겹(색·겉면 글씨), 글꼴·색을 고르고 보낼 링크를 만든다.
-import { PALETTE, FONTS, SOAP, MAX_LAYERS, encode, cleanLines, textOf } from './share.js';
+import { PALETTE, FONTS, SOAP, MAX_LAYERS, encode, cleanLines, cleanText, textOf } from './share.js';
 import { drawLabel, ensureFont } from './label.js';
 
 const $ = (id) => document.getElementById(id);
@@ -25,9 +25,11 @@ export function startCompose() {
   const draftLayers = Array.isArray(d.layers) && d.layers.length ? d.layers : [{ w: d.w, lines: d.outer }];
   const state = {
     lines: cleanLines([d.lines?.[0] ?? '', d.lines?.[1] ?? '']),
+    // 예전 초안은 겹 글씨가 두 줄(lines)이었다 → 한 글로 합친다
     layers: draftLayers.slice(0, MAX_LAYERS).map((l) => ({
       w: pick(l.w, PALETTE.wax),
-      lines: cleanLines([l.lines?.[0] ?? '', l.lines?.[1] ?? '']),
+      k: pick(l.k ?? d.k, PALETTE.ink),
+      text: typeof l.text === 'string' ? l.text : (l.lines || []).filter(Boolean).join('\n'),
     })),
     f: pick(d.f, FONTS),
     c: pick(d.c, PALETTE.clay),
@@ -74,13 +76,30 @@ export function startCompose() {
       card.className = 'layer-card';
       card.innerHTML = `
         <div class="layer-head"><b></b></div>
-        <div class="line"><input type="text" autocomplete="off" /></div>
-        <div class="line"><input type="text" autocomplete="off" placeholder="둘째 줄" /></div>
-        <div class="swatches"></div>`;
+        <textarea class="text" rows="2" autocomplete="off"></textarea>
+        <div class="sub">글씨 색</div>
+        <div class="swatches ink"></div>
+        <div class="sub">왁스 색</div>
+        <div class="swatches wax"></div>`;
       card.querySelector('b').textContent = layerName(i);
-      const inputs = [...card.querySelectorAll('input')];
-      inputs[0].placeholder = '첫째 줄';
-      bindLines(inputs, layer.lines);
+      const ta = card.querySelector('textarea');
+      ta.value = layer.text;
+      // 글이 길어지면 칸도 따라 늘어난다
+      const grow = () => { ta.style.height = 'auto'; ta.style.height = `${ta.scrollHeight + 2}px`; };
+      ta.addEventListener('input', () => { layer.text = ta.value; grow(); update(); });
+      requestAnimationFrame(grow);
+
+      const inkBox = card.querySelector('.ink');
+      PALETTE.ink.forEach(([color, name], j) => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.style.background = color;
+        b.title = name;
+        b.setAttribute('aria-label', `${layerName(i)} 글씨 ${name}`);
+        b.addEventListener('click', () => { layer.k = j; mark(inkBox, j); update(); });
+        inkBox.append(b);
+      });
+      mark(inkBox, layer.k);
 
       if (i > 0) {
         const rm = document.createElement('button');
@@ -91,7 +110,7 @@ export function startCompose() {
         card.querySelector('.layer-head').append(rm);
       }
 
-      const sw = card.querySelector('.swatches');
+      const sw = card.querySelector('.wax');
       PALETTE.wax.forEach(([color, name], j) => {
         const b = document.createElement('button');
         b.type = 'button';
@@ -110,7 +129,7 @@ export function startCompose() {
     if (state.layers.length >= MAX_LAYERS) return;
     // 바로 바깥 겹과 다른 색으로
     const prev = state.layers[state.layers.length - 1].w;
-    state.layers.push({ w: (prev + 1) % PALETTE.wax.length, lines: ['', ''] });
+    state.layers.push({ w: (prev + 1) % PALETTE.wax.length, k: state.layers[state.layers.length - 1].k, text: '' });
     renderLayers();
     update();
   });
@@ -179,7 +198,7 @@ export function startCompose() {
     if (token !== drawToken) return;
     const box = $('previews');
     const items = [
-      ...data.layers.map((l, i) => [PALETTE.wax[l.w][0], { ...data, t: l.o }, layerName(i), i === 0 ? '겉면 글씨' : '']),
+      ...data.layers.map((l, i) => [PALETTE.wax[l.w][0], { ...data, t: l.o, k: l.k }, layerName(i), i === 0 ? '겉면 글씨' : '']),
       [PALETTE.clay[data.c][0], data, '클레이', '숨길 글씨'],
     ];
     box.textContent = '';
@@ -199,13 +218,13 @@ export function startCompose() {
   function currentData() {
     return {
       t: textOf(state.lines),
-      layers: state.layers.map((l) => ({ w: l.w, o: textOf(l.lines) })),
+      layers: state.layers.map((l) => ({ w: l.w, k: l.k, o: cleanText(l.text) })),
       f: state.f, c: state.c, k: state.k,
     };
   }
 
   function update() {
-    saveDraft({ lines: [...state.lines], layers: state.layers.map((l) => ({ w: l.w, lines: [...l.lines] })), f: state.f, c: state.c, k: state.k });
+    saveDraft({ lines: [...state.lines], layers: state.layers.map((l) => ({ w: l.w, k: l.k, text: l.text })), f: state.f, c: state.c, k: state.k });
     const data = currentData();
     const ok = !!data.t.trim();
     $('link').value = ok ? `${location.origin}${location.pathname}#${encode(data)}` : '';

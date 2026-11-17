@@ -7,7 +7,6 @@ export const CHOICE = {
   crack: [0, 2], // 왁스 깨지는 소리: 탁+바사삭과 두꺼운 왁스 뽀각을 섞어서
   tick: 0, // 파편이 바닥에 떨어지는 소리: 틱
   roll: 4, // 시작: 스네어 롤이 크게 시작해 잔잔해지고, 글씨가 드러날 때까지 배경에 깔린다
-  whistle: 1, // 휘파람: 휘이익~ 휘익 (1번에서 앞뒤 음·길이 바꿈)
   cheer: 2, // 환호: 관객 "와아~"+박수
 };
 
@@ -72,9 +71,6 @@ export function stopRoll() {
   g.gain.linearRampToValueAtTime(0, t + 0.6);
   src.stop(t + 0.7);
   rollLoop = null;
-}
-export function whistle(delay = 0) {
-  if (ctx) play(make('whistle'), 0.8, 1, delay);
 }
 export function cheer(delay = 0) {
   if (ctx) play(make('cheer'), 0.8, 1, delay);

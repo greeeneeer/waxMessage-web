@@ -5,7 +5,7 @@
 // - 금 간 왁스를 한 번 더 누르면: 그 파편들이 무대 바닥으로 떨어진다
 // - 끌면(꾹 누르기 전에 움직이거나 바깥을 끌면) 카메라 시점만 돈다. 덩어리는 돌지 않는다.
 // - 처음 화면을 만지면 팀파니 "두구두구… 둥!"이 울리고, 그때부터 화면과 소리를 녹화한다
-// - 클레이 글씨가 95% 드러나면 휘파람·환호와 함께 컨페티가 떨어지고, 아래에서 왁뿌 버튼
+// - 클레이 글씨가 95% 드러나면 환호와 함께 컨페티가 떨어지고, 아래에서 왁뿌 버튼
 //   (다시 깨기 / 나도 만들기 / 영상 저장)이 올라온다. 꾹 누르면 왁스가 깨지며 눌린다.
 // - 그 뒤로는 드러난 클레이를 잡아당기면 점토처럼 늘어나거나 눌린다
 import * as THREE from 'three';
@@ -72,10 +72,9 @@ export async function startPlay(data) {
   const controls = new OrbitControls(camera, canvas);
   controls.enableDamping = true;
   controls.enablePan = false;
-  controls.minPolarAngle = 0.35;
-  controls.maxPolarAngle = 1.5;
-  controls.minAzimuthAngle = -0.8;
-  controls.maxAzimuthAngle = 0.8;
+  // 위·아래·뒤 어디서든 볼 수 있다 (바로 위/아래 끝만 피한다)
+  controls.minPolarAngle = 0.05;
+  controls.maxPolarAngle = Math.PI - 0.05;
   controls.rotateSpeed = 0.7;
 
   const stage = buildStage(scene, { floorY: FLOOR_Y, targetY: LUMP_Y });
@@ -89,7 +88,7 @@ export async function startPlay(data) {
   const layers = data.layers; // 바깥부터
   await ensureFont(data.f, data.t + layers.map((l) => l.o || '').join(''));
   // 바탕색 + 인쇄된 글씨 텍스처. ink: 글씨만 그린 캔버스 (글씨가 얼마나 드러났는지 재는 데 씀)
-  const makeTex = (bg, text, labelOpts) => {
+  const makeTex = (bg, text, labelOpts, k = data.k) => {
     const tc = document.createElement('canvas');
     tc.width = 1024;
     tc.height = Math.round((1024 * LABEL.d) / LABEL.w);
@@ -100,7 +99,7 @@ export async function startPlay(data) {
     lc.width = tc.width;
     lc.height = tc.height;
     if (text && text.trim()) {
-      drawLabel(lc.getContext('2d'), lc.width, lc.height, { ...data, t: text }, labelOpts);
+      drawLabel(lc.getContext('2d'), lc.width, lc.height, { ...data, t: text, k }, labelOpts);
       ctx.drawImage(lc, 0, 0);
     }
     const tex = new THREE.CanvasTexture(tc);
@@ -108,8 +107,8 @@ export async function startPlay(data) {
     tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
     return { tex, ink: lc };
   };
-  const waxMaterial = (color, text, labelOpts) => new THREE.MeshPhysicalMaterial({
-    map: makeTex(color, text, labelOpts).tex,
+  const waxMaterial = (color, text, labelOpts, k) => new THREE.MeshPhysicalMaterial({
+    map: makeTex(color, text, labelOpts, k).tex,
     vertexColors: true,
     roughness: 0.5,
     clearcoat: 0.25,
@@ -133,7 +132,7 @@ export async function startPlay(data) {
     const l = layers[layers.length - 1 - j];
     return {
       box: waxBox(j),
-      mat: waxMaterial(PALETTE.wax[l.w][0], l.o),
+      mat: waxMaterial(PALETTE.wax[l.w][0], l.o, undefined, l.k),
     };
   });
   const outerBox = waxLayers[waxLayers.length - 1].box;
@@ -515,7 +514,6 @@ export async function startPlay(data) {
   // 글씨가 드러났을 때: 휘파람·환호·컨페티, 그리고 버튼이 올라온다
   function celebrate() {
     sound.stopRoll();
-    sound.whistle();
     sound.cheer(0.15);
     confetti.start();
     setTimeout(showButtons, 600);

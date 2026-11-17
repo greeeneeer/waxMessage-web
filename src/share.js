@@ -74,19 +74,25 @@ export function cleanLines(lines) {
     .map((l) => String(l ?? '').replace(/[\r\n]/g, '')); // 글자 수 제한 없음: 길면 글씨가 작아진다
 }
 
+// 왁스 글씨: 글자 수·줄 수 제한 없이 하나의 글. 끝의 빈칸·빈 줄만 지운다
+export function cleanText(v) {
+  return String(v ?? '').replace(/\r/g, '').replace(/\s+$/, '');
+}
+
 export function textOf(lines) {
   const ls = cleanLines(lines);
   while (ls.length && !ls[ls.length - 1].trim()) ls.pop();
   return ls.join('\n');
 }
 
-// data.layers: 왁스 겹 목록, 바깥부터. [{ w: 색 번호, o: 그 겹 겉면 글씨 }]
-// 링크에는 첫 겹을 예전 형식(w, o)으로, 안쪽 겹들은 L: [[색, 글씨], ...]로 넣는다 (예전 링크와 호환)
+// data.layers: 왁스 겹 목록, 바깥부터. [{ w: 왁스 색, o: 그 겹 겉면 글씨, k: 그 겹 글씨 색 }]
+// data.k는 클레이(숨길 글씨) 글씨 색.
+// 링크에는 첫 겹을 예전 형식(w, o, ok)으로, 안쪽 겹들은 L: [[색, 글씨, 글씨 색], ...]로 넣는다 (예전 링크와 호환)
 export function encode(data) {
   const [first, ...rest] = data.layers;
-  const o = { t: data.t, f: data.f, c: data.c, w: first.w, k: data.k };
+  const o = { t: data.t, f: data.f, c: data.c, w: first.w, k: data.k, ok: first.k };
   if (first.o && first.o.trim()) o.o = first.o;
-  if (rest.length) o.L = rest.map((l) => [l.w, l.o || '']);
+  if (rest.length) o.L = rest.map((l) => [l.w, l.o || '', l.k]);
   const json = JSON.stringify(o);
   let bin = '';
   new TextEncoder().encode(json).forEach((b) => (bin += String.fromCharCode(b)));
@@ -104,11 +110,12 @@ export function decode(code) {
     const o = JSON.parse(new TextDecoder().decode(bytes));
     const t = textOf(String(o.t ?? '').split('\n'));
     if (!t.trim()) return null;
-    const text = (v) => textOf(String(v ?? '').split('\n'));
-    const layers = [{ w: clampIndex(o.w, PALETTE.wax), o: text(o.o) }];
+    const k = clampIndex(o.k, PALETTE.ink);
+    const ink = (v) => (Number.isInteger(v) ? clampIndex(v, PALETTE.ink) : k);
+    const layers = [{ w: clampIndex(o.w, PALETTE.wax), o: cleanText(o.o), k: ink(o.ok) }];
     if (Array.isArray(o.L)) {
       for (const l of o.L.slice(0, MAX_LAYERS - 1)) {
-        if (Array.isArray(l)) layers.push({ w: clampIndex(l[0], PALETTE.wax), o: text(l[1]) });
+        if (Array.isArray(l)) layers.push({ w: clampIndex(l[0], PALETTE.wax), o: cleanText(l[1]), k: ink(l[2]) });
       }
     }
     return {
@@ -116,7 +123,7 @@ export function decode(code) {
       layers,
       f: clampIndex(o.f, FONTS),
       c: clampIndex(o.c, PALETTE.clay),
-      k: clampIndex(o.k, PALETTE.ink),
+      k,
     };
   } catch {
     return null;

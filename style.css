@@ -115,7 +115,24 @@ body.mode-play { overflow: hidden; overscroll-behavior: none; background: #0d0a0
   color: var(--ink);
   outline: none;
 }
-.line input::placeholder { color: #6f5f5a; }
+.line input::placeholder, textarea.text::placeholder { color: #6f5f5a; }
+textarea.text {
+  display: block;
+  width: 100%;
+  font: inherit;
+  font-size: 20px;
+  line-height: 1.4;
+  padding: 12px 16px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--card2);
+  color: var(--ink);
+  outline: none;
+  resize: none;
+  overflow: hidden;
+}
+textarea.text:focus { border-color: var(--gold); box-shadow: 0 0 0 3px rgba(231, 194, 125, 0.18); }
+.sub { font-size: 13px; color: var(--muted); margin: 12px 0 6px; }
 .line input:focus { border-color: var(--gold); box-shadow: 0 0 0 3px rgba(231, 194, 125, 0.18); }
 .count { position: absolute; right: 14px; top: 50%; transform: translateY(-50%); color: var(--muted); font-size: 13px; }
 
