@@ -46,7 +46,7 @@ export async function startPlay(data) {
   const canvas = $('scene');
 
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setPixelRatio(1); // 해상도는 resize()에서 직접 정한다 (녹화용으로 짝수 크기·상한)
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 0.85;
@@ -215,10 +215,19 @@ export async function startPlay(data) {
   });
   const totalArea = chunks.reduce((s, c) => s + c.area, 0);
 
+  // 영상 녹화 상태 (resize에서도 보므로 먼저 만든다)
+  let recorder = null;
+  const recChunks = [];
+
   // 화면 크기에 맞춰 카메라 거리와 커튼 위치 조정
   function resize() {
     const w = window.innerWidth, h = window.innerHeight;
-    renderer.setSize(w, h, false);
+    // 녹화 중에는 그림 크기를 바꾸지 않는다 (영상 중간에 크기가 바뀌면 맥 등에서 화면이 안 나온다)
+    if (recorder && recorder.state !== 'inactive') return;
+    // 그림 크기: 화면 × 기기 배율, 긴 쪽 최대 1920, 가로세로 짝수 (H.264 영상 규칙)
+    const scale = Math.min(window.devicePixelRatio || 1, 2, 1920 / Math.max(w, h));
+    const even = (v) => Math.max(2, Math.round((v * scale) / 2) * 2);
+    renderer.setSize(even(w), even(h), false);
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
     const tanV = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
@@ -534,8 +543,6 @@ export async function startPlay(data) {
   const confetti = makeConfetti(scene, FLOOR_Y);
 
   // ---------- 영상 녹화 ----------
-  let recorder = null;
-  const recChunks = [];
   function canRecord() {
     return !!(window.MediaRecorder && canvas.captureStream);
   }
@@ -545,7 +552,15 @@ export async function startPlay(data) {
       const stream = canvas.captureStream(30);
       const audio = sound.audioTrack();
       if (audio) stream.addTrack(audio);
-      const types = ['video/mp4;codecs=avc3.42E01E,mp4a.40.2', 'video/mp4;codecs=avc1.42E01E,mp4a.40.2', 'video/mp4', 'video/webm;codecs=vp9,opus', 'video/webm'];
+      // 맥(QuickTime)·아이폰에서 바로 재생되는 H.264(avc1) mp4를 먼저. avc3는 QuickTime이 화면을 못 읽는다.
+      const types = [
+        'video/mp4;codecs=avc1.640028,mp4a.40.2',
+        'video/mp4;codecs=avc1.4d0028,mp4a.40.2',
+        'video/mp4;codecs=avc1.42E01E,mp4a.40.2',
+        'video/mp4',
+        'video/webm;codecs=vp9,opus',
+        'video/webm',
+      ];
       const mimeType = types.find((t) => MediaRecorder.isTypeSupported(t));
       recorder = new MediaRecorder(stream, mimeType ? { mimeType, videoBitsPerSecond: 6_000_000 } : undefined);
       recorder.ondataavailable = (e) => { if (e.data.size) recChunks.push(e.data); };
