@@ -12,7 +12,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { PALETTE, LABEL } from './share.js';
-import { drawLabel, ensureFont } from './label.js';
+import { drawLabel, ensureFont, onFontsLoaded } from './label.js';
 import { soapGeometry, initialWaxPolys, webSeeds, splitPolys, buildPiece, waxBox } from './geometry.js';
 import { buildStage } from './stage.js';
 import { makeConfetti } from './confetti.js';
@@ -86,7 +86,10 @@ export async function startPlay(data) {
   scene.add(lump);
 
   const layers = data.layers; // 바깥부터
-  await ensureFont(data.f, data.t + layers.map((l) => l.o || '').join(''));
+  // 쓰는 글자(버튼 글씨 포함)가 든 글꼴 묶음을 모두 받을 때까지 기다린다 (로딩 화면이 가려 준다)
+  await ensureFont(data.f, data.t + layers.map((l) => l.o || '').join('') + '다시 부수기나도 만들기영상 저장', 10000);
+  const textures = [];
+  onFontsLoaded(() => textures.forEach((t) => t.redraw()));
   // 바탕색 + 인쇄된 글씨 텍스처. ink: 글씨만 그린 캔버스 (글씨가 얼마나 드러났는지 재는 데 씀)
   const makeTex = (bg, text, labelOpts, k = data.k) => {
     const tc = document.createElement('canvas');
@@ -98,13 +101,19 @@ export async function startPlay(data) {
     const lc = document.createElement('canvas');
     lc.width = tc.width;
     lc.height = tc.height;
-    if (text && text.trim()) {
-      drawLabel(lc.getContext('2d'), lc.width, lc.height, { ...data, t: text, k }, labelOpts);
-      ctx.drawImage(lc, 0, 0);
-    }
+    const draw = () => {
+      ctx.fillStyle = bg;
+      ctx.fillRect(0, 0, tc.width, tc.height);
+      if (text && text.trim()) {
+        drawLabel(lc.getContext('2d'), lc.width, lc.height, { ...data, t: text, k }, labelOpts);
+        ctx.drawImage(lc, 0, 0);
+      }
+    };
+    draw();
     const tex = new THREE.CanvasTexture(tc);
     tex.colorSpace = THREE.SRGBColorSpace;
     tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+    textures.push({ redraw: () => { draw(); tex.needsUpdate = true; } });
     return { tex, ink: lc };
   };
   const waxMaterial = (color, text, labelOpts, k) => new THREE.MeshPhysicalMaterial({

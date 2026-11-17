@@ -2,16 +2,22 @@
 import { FONTS, PALETTE } from './share.js';
 
 // 웹 글꼴이 내려받아질 때까지 기다린다. 너무 오래 걸리면 그냥 진행.
-export async function ensureFont(f, text) {
+// (한글 웹 글꼴은 글자 묶음별로 나눠 내려받기 때문에, 쓰는 글자를 text로 꼭 넘겨야 그 글자가 들어 있는 묶음을 받는다)
+export async function ensureFont(f, text, timeout = 3000) {
   const [family, weight] = FONTS[f];
   try {
     await Promise.race([
       document.fonts.load(`${weight} 64px "${family}"`, text || '가나다'),
-      new Promise((r) => setTimeout(r, 3000)),
+      new Promise((r) => setTimeout(r, timeout)),
     ]);
   } catch {
     /* 글꼴을 못 받아도 기본 글꼴로 그린다 */
   }
+}
+
+// 글꼴 묶음이 늦게 도착했을 때 다시 그리도록 cb를 부른다 (안 그러면 일부 글자만 기본 글꼴로 남아 섞여 보인다)
+export function onFontsLoaded(cb) {
+  document.fonts?.addEventListener?.('loadingdone', cb);
 }
 
 // 문단(줄바꿈으로 나뉜 덩어리)을 너비 maxW에 맞게 줄을 나눈다. 띄어쓰기에서 먼저 나누고, 한 단어가 너무 길면 글자 단위로.

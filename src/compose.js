@@ -1,6 +1,6 @@
 // 작성 화면: 숨길 글씨, 왁스 겹(색·겉면 글씨), 글꼴·색을 고르고 보낼 링크를 만든다.
 import { PALETTE, FONTS, SOAP, MAX_LAYERS, encode, cleanText } from './share.js';
-import { drawLabel, ensureFont } from './label.js';
+import { drawLabel, ensureFont, onFontsLoaded } from './label.js';
 
 const $ = (id) => document.getElementById(id);
 const DRAFT_KEY = 'wax-soap-draft';
@@ -197,6 +197,8 @@ export function startCompose() {
       box.append(fig);
     }
   }
+
+  onFontsLoaded(() => drawPreviews());
 
   function currentData() {
     return {
