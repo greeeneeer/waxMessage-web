@@ -6,7 +6,7 @@
 // - 끌면(꾹 누르기 전에 움직이거나 바깥을 끌면) 카메라 시점만 돈다. 덩어리는 돌지 않는다.
 // - 처음 화면을 만지면 팀파니 "두구두구… 둥!"이 울리고, 그때부터 화면과 소리를 녹화한다
 // - 클레이 글씨가 95% 드러나면 환호와 함께 컨페티가 떨어지고, 아래에서 왁뿌 버튼
-//   (다시 깨기 / 나도 만들기 / 영상 저장)이 올라온다. 꾹 누르면 왁스가 깨지며 눌린다.
+//   (다시 부수기 / 나도 만들기 / 영상 저장)이 올라온다. 꾹 누르면 왁스가 깨지며 눌린다.
 // - 그 뒤로는 드러난 클레이를 잡아당기면 점토처럼 늘어나거나 눌린다
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
@@ -477,7 +477,7 @@ export async function startPlay(data) {
     const clayMat = new THREE.MeshStandardMaterial({ map: makeTex(clayColor, '').tex, roughness: 0.78, envMapIntensity: ENV });
     const box = waxBox(0);
     const defs = [
-      ['다시 깨기', () => location.reload()],
+      ['다시 부수기', () => location.reload()],
       ['나도 만들기', () => (location.href = location.pathname)],
     ];
     if (canRecord()) defs.push(['영상 저장', () => saveVideo()]);
