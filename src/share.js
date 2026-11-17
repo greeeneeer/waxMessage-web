@@ -7,6 +7,7 @@ export const SOAP = { w: 3.2, h: 1.1, d: 2.2, r: 0.34 };
 export const LABEL = { w: SOAP.w - 2 * SOAP.r, d: SOAP.d - 2 * SOAP.r };
 
 export const LIMIT = { lines: 2, perLine: 10 };
+export const MAX_LAYERS = 3; // 왁스는 최대 세 겹
 
 export const PALETTE = {
   clay: [
@@ -59,9 +60,13 @@ export function textOf(lines) {
   return ls.join('\n');
 }
 
+// data.layers: 왁스 겹 목록, 바깥부터. [{ w: 색 번호, o: 그 겹 겉면 글씨 }]
+// 링크에는 첫 겹을 예전 형식(w, o)으로, 안쪽 겹들은 L: [[색, 글씨], ...]로 넣는다 (예전 링크와 호환)
 export function encode(data) {
-  const o = { t: data.t, f: data.f, c: data.c, w: data.w, k: data.k };
-  if (data.o && data.o.trim()) o.o = data.o; // 왁스 겉면 글씨 (있을 때만)
+  const [first, ...rest] = data.layers;
+  const o = { t: data.t, f: data.f, c: data.c, w: first.w, k: data.k };
+  if (first.o && first.o.trim()) o.o = first.o;
+  if (rest.length) o.L = rest.map((l) => [l.w, l.o || '']);
   const json = JSON.stringify(o);
   let bin = '';
   new TextEncoder().encode(json).forEach((b) => (bin += String.fromCharCode(b)));
@@ -79,12 +84,18 @@ export function decode(code) {
     const o = JSON.parse(new TextDecoder().decode(bytes));
     const t = textOf(String(o.t ?? '').split('\n'));
     if (!t.trim()) return null;
+    const text = (v) => textOf(String(v ?? '').split('\n'));
+    const layers = [{ w: clampIndex(o.w, PALETTE.wax), o: text(o.o) }];
+    if (Array.isArray(o.L)) {
+      for (const l of o.L.slice(0, MAX_LAYERS - 1)) {
+        if (Array.isArray(l)) layers.push({ w: clampIndex(l[0], PALETTE.wax), o: text(l[1]) });
+      }
+    }
     return {
       t,
-      o: textOf(String(o.o ?? '').split('\n')),
+      layers,
       f: clampIndex(o.f, FONTS),
       c: clampIndex(o.c, PALETTE.clay),
-      w: clampIndex(o.w, PALETTE.wax),
       k: clampIndex(o.k, PALETTE.ink),
     };
   } catch {

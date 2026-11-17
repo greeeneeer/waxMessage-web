@@ -53,6 +53,13 @@ body.mode-play { overflow: hidden; overscroll-behavior: none; background: #0d0a0
 .notice { background: #ffe3e3; border-radius: 12px; padding: 10px 14px; text-align: center; }
 
 .previews { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 16px 0 8px; }
+.layers { display: flex; flex-direction: column; gap: 12px; }
+.layer-card { background: rgba(255, 255, 255, 0.55); border: 2px solid var(--line); border-radius: 16px; padding: 12px; }
+.layer-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.layer-head b { font-family: var(--title); font-weight: 400; font-size: 17px; }
+.layer-head button { font-size: 14px; padding: 6px 12px; }
+.layer-card .swatches { margin-top: 4px; }
+.add-layer { width: 100%; margin-top: 12px; font-size: 16px; padding: 12px; }
 .previews figure { margin: 0; }
 .previews canvas { display: block; width: 100%; height: auto; }
 .previews figcaption { text-align: center; font-size: 13px; color: var(--muted); margin-top: 2px; }

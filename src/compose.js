@@ -1,5 +1,5 @@
-// 작성 화면: 왁스 겉면 글씨, 숨길 글씨, 색을 고르고 보낼 링크를 만든다.
-import { PALETTE, FONTS, SOAP, LIMIT, encode, cleanLines, textOf } from './share.js';
+// 작성 화면: 숨길 글씨, 왁스 겹(색·겉면 글씨), 글꼴·색을 고르고 보낼 링크를 만든다.
+import { PALETTE, FONTS, SOAP, LIMIT, MAX_LAYERS, encode, cleanLines, textOf } from './share.js';
 import { drawLabel, ensureFont } from './label.js';
 
 const $ = (id) => document.getElementById(id);
@@ -16,23 +16,30 @@ function saveDraft(s) {
   try { localStorage.setItem(DRAFT_KEY, JSON.stringify(s)); } catch { /* 무시 */ }
 }
 
+const layerName = (i) => (i === 0 ? '겉 왁스' : `속 왁스 ${i}`);
+
 export function startCompose() {
   const d = loadDraft() || {};
   const pick = (v, list) => (Number.isInteger(v) && v >= 0 && v < list.length ? v : 0);
+  // 예전 초안(겹 하나: w, outer)도 읽는다
+  const draftLayers = Array.isArray(d.layers) && d.layers.length ? d.layers : [{ w: d.w, lines: d.outer }];
   const state = {
     lines: cleanLines([d.lines?.[0] ?? '', d.lines?.[1] ?? '']),
-    outer: cleanLines([d.outer?.[0] ?? '', d.outer?.[1] ?? '']),
+    layers: draftLayers.slice(0, MAX_LAYERS).map((l) => ({
+      w: pick(l.w, PALETTE.wax),
+      lines: cleanLines([l.lines?.[0] ?? '', l.lines?.[1] ?? '']),
+    })),
     f: pick(d.f, FONTS),
     c: pick(d.c, PALETTE.clay),
-    w: pick(d.w, PALETTE.wax),
     k: pick(d.k, PALETTE.ink),
   };
 
-  bindLines(['o1', 'o2'], ['m1', 'm2'], state.outer);
-  bindLines(['l1', 'l2'], ['n1', 'n2'], state.lines);
+  // 숨길 글씨
+  bindLines([$('l1'), $('l2')], [$('n1'), $('n2')], state.lines);
 
-  function bindLines(ids, countIds, target) {
-    const inputs = ids.map($);
+  // 두 줄 입력칸을 상태에 연결한다
+  function bindLines(inputs, counts, target) {
+    const showCount = () => target.forEach((l, i) => (counts[i].textContent = `${Array.from(l).length}/${LIMIT.perLine}`));
     inputs.forEach((el, i) => {
       el.value = target[i];
       el.addEventListener('input', () => {
@@ -42,6 +49,7 @@ export function startCompose() {
           if (clean !== el.value) el.value = clean;
         }
         target[i] = el.value;
+        showCount();
         update();
       });
       el.addEventListener('compositionstart', () => (el.dataset.composing = '1'));
@@ -57,8 +65,59 @@ export function startCompose() {
         }
       });
     });
-    target.countEls = countIds.map($);
+    showCount();
   }
+
+  // 왁스 겹 카드들
+  function renderLayers() {
+    const box = $('layers');
+    box.textContent = '';
+    state.layers.forEach((layer, i) => {
+      const card = document.createElement('div');
+      card.className = 'layer-card';
+      card.innerHTML = `
+        <div class="layer-head"><b></b></div>
+        <div class="line"><input type="text" maxlength="10" autocomplete="off" /><span class="count"></span></div>
+        <div class="line"><input type="text" maxlength="10" autocomplete="off" placeholder="둘째 줄" /><span class="count"></span></div>
+        <div class="swatches"></div>`;
+      card.querySelector('b').textContent = layerName(i);
+      const inputs = [...card.querySelectorAll('input')];
+      inputs[0].placeholder = i === 0 ? '겉면 글씨 (예: 무대 날짜 공개)' : '이 겹에 보일 글씨 (비워도 돼요)';
+      bindLines(inputs, [...card.querySelectorAll('.count')], layer.lines);
+
+      if (i > 0) {
+        const rm = document.createElement('button');
+        rm.type = 'button';
+        rm.className = 'ghost';
+        rm.textContent = '빼기';
+        rm.addEventListener('click', () => { state.layers.splice(i, 1); renderLayers(); update(); });
+        card.querySelector('.layer-head').append(rm);
+      }
+
+      const sw = card.querySelector('.swatches');
+      PALETTE.wax.forEach(([color, name], j) => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.style.background = color;
+        b.title = name;
+        b.setAttribute('aria-label', `${layerName(i)} ${name}`);
+        b.addEventListener('click', () => { layer.w = j; mark(sw, j); update(); });
+        sw.append(b);
+      });
+      mark(sw, layer.w);
+      box.append(card);
+    });
+    $('addLayer').hidden = state.layers.length >= MAX_LAYERS;
+  }
+  $('addLayer').addEventListener('click', () => {
+    if (state.layers.length >= MAX_LAYERS) return;
+    // 바로 바깥 겹과 다른 색으로
+    const prev = state.layers[state.layers.length - 1].w;
+    state.layers.push({ w: (prev + 1) % PALETTE.wax.length, lines: ['', ''] });
+    renderLayers();
+    update();
+  });
+  renderLayers();
 
   // 글꼴 버튼
   const fontBox = $('fonts');
@@ -73,11 +132,8 @@ export function startCompose() {
   });
   mark(fontBox, state.f);
 
-  // 색 버튼들
   swatches($('inks'), PALETTE.ink, 'k');
   swatches($('clays'), PALETTE.clay, 'c');
-  swatches($('waxes'), PALETTE.wax, 'w');
-
   function swatches(box, list, key) {
     list.forEach(([color, name], i) => {
       const b = document.createElement('button');
@@ -97,7 +153,6 @@ export function startCompose() {
     clearTimeout(toast.t);
     toast.t = setTimeout(() => ($('toast').textContent = ''), 2200);
   };
-
   $('copy').addEventListener('click', async () => {
     const link = $('link').value;
     try {
@@ -108,38 +163,52 @@ export function startCompose() {
       toast('위 링크를 길게 눌러 복사해 주세요');
     }
   });
-
   if (navigator.share) {
     $('share').hidden = false;
     $('share').addEventListener('click', () => {
       navigator.share({ title: '왁뿌 비누', text: '왁스를 깨면 글씨가 나와요', url: $('link').value }).catch(() => {});
     });
   }
-
   $('try').addEventListener('click', () => {
     location.hash = $('link').value.split('#')[1];
   });
 
-  // 미리보기와 링크 갱신
+  // 미리보기: 겹마다 하나씩 + 클레이
   let drawToken = 0;
   async function drawPreviews() {
     const token = ++drawToken;
     const data = currentData();
-    await ensureFont(data.f, data.t + data.o);
+    await ensureFont(data.f, data.t + data.layers.map((l) => l.o).join(''));
     if (token !== drawToken) return;
-    drawSoapTop($('previewOuter'), PALETTE.wax[data.w][0], { ...data, t: data.o }, '겉에 보일\n글씨');
-    drawSoapTop($('preview'), PALETTE.clay[data.c][0], data, '숨길 글씨');
+    const box = $('previews');
+    const items = [
+      ...data.layers.map((l, i) => [PALETTE.wax[l.w][0], { ...data, t: l.o }, layerName(i), i === 0 ? '겉면 글씨' : '']),
+      [PALETTE.clay[data.c][0], data, '클레이 (숨긴 글씨)', '숨길 글씨'],
+    ];
+    box.textContent = '';
+    for (const [color, d2, caption, placeholder] of items) {
+      const fig = document.createElement('figure');
+      const cv = document.createElement('canvas');
+      cv.width = 480;
+      cv.height = 340;
+      drawSoapTop(cv, color, d2, placeholder);
+      const cap = document.createElement('figcaption');
+      cap.textContent = caption;
+      fig.append(cv, cap);
+      box.append(fig);
+    }
   }
 
   function currentData() {
-    return { t: textOf(state.lines), o: textOf(state.outer), f: state.f, c: state.c, w: state.w, k: state.k };
+    return {
+      t: textOf(state.lines),
+      layers: state.layers.map((l) => ({ w: l.w, o: textOf(l.lines) })),
+      f: state.f, c: state.c, k: state.k,
+    };
   }
 
   function update() {
-    saveDraft({ lines: [...state.lines], outer: [...state.outer], f: state.f, c: state.c, w: state.w, k: state.k });
-    for (const target of [state.lines, state.outer]) {
-      target.forEach((l, i) => (target.countEls[i].textContent = `${Array.from(l).length}/${LIMIT.perLine}`));
-    }
+    saveDraft({ lines: [...state.lines], layers: state.layers.map((l) => ({ w: l.w, lines: [...l.lines] })), f: state.f, c: state.c, k: state.k });
     const data = currentData();
     const ok = !!data.t.trim();
     $('link').value = ok ? `${location.origin}${location.pathname}#${encode(data)}` : '';

@@ -1,20 +1,25 @@
 // 깨기 화면: 어두운 무대 위, 핀 조명 아래 왁스로 덮인 비누 덩어리가 앞뒤로만 비스듬히 떠 있다.
-// - 덩어리를 꾹 누르면: 누른 자리를 중심으로 거미줄 모양으로 금이 간다 (가운데는 잘게 부서져 바로 떨어짐)
+// 왁스는 여러 겹일 수 있다 (겉 왁스 → 속 왁스 → 클레이).
+// - 덩어리를 꾹 누르면: 누른 자리를 중심으로 거미줄 모양으로 금이 간다 (가운데는 부서져 바로 떨어짐)
+// - 꾹 누른 채로 끌면: 지나가는 선을 따라 파사삭 연달아 부서진다
 // - 금 간 왁스를 한 번 더 누르면: 그 파편들이 무대 바닥으로 떨어진다
-// - 덩어리를 끌면 덩어리가 돌아가고, 바깥(배경)을 끌면 카메라 시점이 돈다
+// - 겉 왁스가 떨어져 드러난 속 왁스는 톡 누르기만 해도 부서진다
+// - 끌면(꾹 누르기 전에 움직이거나 바깥을 끌면) 카메라 시점만 돈다. 덩어리는 돌지 않는다.
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { PALETTE, LABEL } from './share.js';
 import { drawLabel, ensureFont } from './label.js';
-import { soapGeometry, initialWaxPolys, webSeeds, splitPolys, buildPiece, OUTER } from './geometry.js';
+import { soapGeometry, initialWaxPolys, webSeeds, splitPolys, buildPiece, waxBox } from './geometry.js';
 import { buildStage } from './stage.js';
 import * as sound from './sound.js';
 
-// 깨지는 정도. 20~30번 누르면 다 깨지도록 맞춘 값.
-const WEB_R = 1.1; // 꾹 누른 자리에서 이 거리 안에 걸친 조각이 거미줄 모양으로 다시 갈라진다
-const CRUMB_R = 0.17; // 이 안쪽 부스러기는 바로 떨어진다
+// 깨지는 정도 (겹 하나 기준 20~30번 누르면 다 깨지도록 맞춘 값)
+const WEB_R = 1.1; // 꾹 누른 자리에서 이 거리 안의 성한 조각이 거미줄 모양으로 다시 갈라진다
+const CRUMB_R = 0.3; // 이 안쪽 조각은 바로 떨어진다
 const DROP_R = 1.1; // 금 간 파편을 누르면 이 반경 안의 금 간 파편이 함께 떨어진다
+const SCRUB_STEP = 0.32; // 꾹 누른 채 끌 때 이만큼 움직일 때마다 부순다
+const SCRUB_R = 0.5; // 끌면서 부술 때 함께 떨어지는 반경
 const FINISH_AT = 0.9; // 왁스 넓이의 이만큼이 떨어지면 남은 것도 다 떨어진다
 const HOLD_MS = 420; // 이만큼 누르고 있으면 '꾹'
 
@@ -68,14 +73,14 @@ export async function startPlay(data) {
 
   const stage = buildStage(scene, { floorY: FLOOR_Y, targetY: LUMP_Y });
 
-  // 덩어리 = 비누 + 왁스 파편
+  // 덩어리 = 비누 + 왁스 겹들
   const lump = new THREE.Group();
   lump.position.y = LUMP_Y;
   lump.rotation.x = TILT;
   scene.add(lump);
 
-  // 글씨 텍스처: 클레이(숨길 글씨), 왁스 겉면(겉 글씨)
-  await ensureFont(data.f, data.t + (data.o || ''));
+  const layers = data.layers; // 바깥부터
+  await ensureFont(data.f, data.t + layers.map((l) => l.o || '').join(''));
   const makeTex = (bg, text) => {
     const tc = document.createElement('canvas');
     tc.width = 1024;
@@ -96,6 +101,7 @@ export async function startPlay(data) {
     return tex;
   };
 
+  // 클레이
   const soapGeo = soapGeometry();
   const soap = new THREE.Mesh(
     soapGeo,
@@ -107,34 +113,36 @@ export async function startPlay(data) {
   const restNrm = soapGeo.attributes.normal.array.slice();
   const dents = new Float32Array(soapGeo.attributes.position.count);
 
-  const waxMat = new THREE.MeshPhysicalMaterial({
-    map: makeTex(PALETTE.wax[data.w][0], data.o),
-    vertexColors: true,
-    roughness: 0.38,
-    clearcoat: 0.5,
-    clearcoatRoughness: 0.35,
-    envMapIntensity: ENV,
-    side: THREE.DoubleSide,
+  // 왁스 겹마다 상자 크기와 재질. j = 안쪽부터 센 번호
+  const waxLayers = layers.map((_, j) => {
+    const l = layers[layers.length - 1 - j];
+    return {
+      box: waxBox(j),
+      mat: new THREE.MeshPhysicalMaterial({
+        map: makeTex(PALETTE.wax[l.w][0], l.o),
+        vertexColors: true,
+        roughness: 0.38,
+        clearcoat: 0.5,
+        clearcoatRoughness: 0.35,
+        envMapIntensity: ENV,
+        side: THREE.DoubleSide,
+      }),
+    };
   });
+  const outerBox = waxLayers[waxLayers.length - 1].box;
 
   // 왁스 파편들
   let chunks = [];
-  function addPiece(piece, state = INTACT) {
-    const mesh = new THREE.Mesh(piece.body, waxMat);
+  function addPiece(piece, layer, state = INTACT) {
+    const mesh = new THREE.Mesh(piece.body, waxLayers[layer].mat);
     mesh.position.copy(piece.center);
     mesh.castShadow = mesh.receiveShadow = true;
     const chunk = {
-      ...piece, mesh, state,
+      ...piece, mesh, state, layer,
       vel: new THREE.Vector3(), spin: new THREE.Vector3(),
       delay: 0, pending: false, onFloor: false, rest: null, restY: 0, still: 0,
     };
     mesh.userData.chunk = chunk;
-    if (piece.wall) {
-      const wall = new THREE.Mesh(piece.wall, waxMat);
-      wall.castShadow = true;
-      wall.userData.chunk = chunk;
-      mesh.add(wall);
-    }
     lump.add(mesh);
     chunks.push(chunk);
     return chunk;
@@ -142,10 +150,11 @@ export async function startPlay(data) {
   function removePiece(c) {
     lump.remove(c.mesh);
     c.body.dispose();
-    c.wall?.dispose();
     chunks = chunks.filter((x) => x !== c);
   }
-  for (const polys of initialWaxPolys(30)) addPiece(buildPiece(polys));
+  waxLayers.forEach((wl, j) => {
+    for (const polys of initialWaxPolys(wl.box, 30)) addPiece(buildPiece(polys, wl.box), j);
+  });
   const totalArea = chunks.reduce((s, c) => s + c.area, 0);
 
   // 화면 크기에 맞춰 카메라 거리와 커튼 위치 조정
@@ -180,9 +189,9 @@ export async function startPlay(data) {
     ndc.set(((x - r.left) / r.width) * 2 - 1, -((y - r.top) / r.height) * 2 + 1);
     raycaster.setFromCamera(ndc, camera);
     const targets = [soap, ...chunks.filter((c) => c.state < FALLING).map((c) => c.mesh)];
-    const hit = raycaster.intersectObjects(targets, true)[0];
+    const hit = raycaster.intersectObjects(targets, false)[0];
     if (!hit) return null;
-    return { point: hit.point.clone(), chunk: hit.object.userData.chunk ?? null };
+    return { local: lump.worldToLocal(hit.point.clone()), chunk: hit.object.userData.chunk ?? null };
   }
 
   function onDown(e) {
@@ -193,17 +202,16 @@ export async function startPlay(data) {
       return;
     }
     const hit = pick(e.clientX, e.clientY);
-    if (hit) {
-      // 다 깬 뒤에도 덩어리는 돌려 볼 수 있다 (누르기만 막는다)
+    if (hit && !finished) {
       controls.enabled = false;
-      const p = { x: e.clientX, y: e.clientY, lx: e.clientX, ly: e.clientY, t: performance.now(), mode: 'press', fired: finished };
-      if (!finished) {
-        p.timer = setTimeout(() => {
-          if (press !== p || p.mode !== 'press') return;
-          p.fired = true;
-          longPress(p.x, p.y);
-        }, HOLD_MS);
-      }
+      const p = { x: e.clientX, y: e.clientY, lx: e.clientX, ly: e.clientY, t: performance.now(), mode: 'press', fired: false };
+      p.timer = setTimeout(() => {
+        if (press !== p || p.mode !== 'press') return;
+        p.fired = true;
+        p.mode = 'scrub';
+        const h = pick(p.lx, p.ly);
+        if (h) { longHit(h.chunk, h.local); p.last = h.local; }
+      }, HOLD_MS);
       press = p;
       try { canvas.setPointerCapture(e.pointerId); } catch { /* 합성 이벤트 등 */ }
     } else {
@@ -215,10 +223,12 @@ export async function startPlay(data) {
   function onMove(e) {
     if (!press || !e.isPrimary) return;
     if (press.mode === 'press' && Math.hypot(e.clientX - press.x, e.clientY - press.y) > 9) {
-      press.mode = 'rotate';
+      // 꾹 누르기 전에 움직임 → 시점 돌리기
+      press.mode = 'orbit';
       clearTimeout(press.timer);
     }
-    if (press.mode === 'rotate') rotateLump(e.clientX - press.lx, e.clientY - press.ly);
+    if (press.mode === 'orbit') orbit(e.clientX - press.lx, e.clientY - press.ly);
+    if (press.mode === 'scrub') scrub(e.clientX, e.clientY);
     press.lx = e.clientX;
     press.ly = e.clientY;
   }
@@ -231,88 +241,106 @@ export async function startPlay(data) {
     controls.enabled = true;
   }
 
-  // 덩어리를 손가락 방향대로 굴린다 (화면 기준)
-  const axisUp = new THREE.Vector3(), axisRight = new THREE.Vector3(), q = new THREE.Quaternion();
-  function rotateLump(dx, dy) {
-    camera.matrixWorld.extractBasis(axisRight, axisUp, new THREE.Vector3());
-    const s = 0.008;
-    q.setFromAxisAngle(axisUp, dx * s);
-    lump.quaternion.premultiply(q);
-    q.setFromAxisAngle(axisRight, dy * s);
-    lump.quaternion.premultiply(q);
+  // 덩어리 위에서 시작한 끌기로도 시점이 돌도록 (OrbitControls와 같은 방식·제한)
+  const sph = new THREE.Spherical();
+  const offset = new THREE.Vector3();
+  function orbit(dx, dy) {
+    const k = (2 * Math.PI * controls.rotateSpeed) / canvas.clientHeight;
+    offset.copy(camera.position).sub(controls.target);
+    sph.setFromVector3(offset);
+    sph.theta = THREE.MathUtils.clamp(sph.theta - dx * k, controls.minAzimuthAngle, controls.maxAzimuthAngle);
+    sph.phi = THREE.MathUtils.clamp(sph.phi - dy * k, controls.minPolarAngle, controls.maxPolarAngle);
+    offset.setFromSpherical(sph);
+    camera.position.copy(controls.target).add(offset);
+    camera.lookAt(controls.target);
+  }
+
+  // 꾹 누른 채 끌기: 일정 거리마다 그 자리를 부순다
+  function scrub(x, y) {
+    if (finished) return;
+    const h = pick(x, y);
+    if (!h) return;
+    if (press.last && press.last.distanceTo(h.local) < SCRUB_STEP) return;
+    press.last = h.local;
+    if (h.chunk && h.chunk.state === CRACKED) {
+      dropAround(h.chunk, h.local, SCRUB_R, true);
+    } else if (h.chunk) {
+      shatter(h.local, h.chunk.layer, 0.75, SCRUB_R, true);
+    } else {
+      dent(h.local, 0.5);
+      squashV -= 0.4;
+    }
   }
 
   // 그냥 누름: 금 간 파편이면 떨어지고, 아니면 말랑하게 살짝 눌렸다 돌아온다
   function shortPress(x, y) {
-    const hit = pick(x, y);
-    if (hit) shortHit(hit.chunk, lump.worldToLocal(hit.point));
+    const h = pick(x, y);
+    if (h) shortHit(h.chunk, h.local);
   }
   function shortHit(chunk, local) {
     if (chunk && chunk.state === CRACKED) {
       presses++;
-      dropAround(chunk, local);
+      dropAround(chunk, local, DROP_R);
+    } else if (chunk && chunk.layer < waxLayers.length - 1) {
+      // 겉 왁스가 떨어져 드러난 속 왁스는 톡 눌러도 부서진다
+      presses++;
+      if (chunk.layer === 0) dent(local, 0.6);
+      shatter(local, chunk.layer, 1, CRUMB_R);
     } else {
       squashV -= 0.25;
       sound.tick();
     }
   }
 
-  // 꾹 누름: 금 간 파편이면 떨어지고, 아니면 거미줄 모양으로 금이 간다
-  function longPress(x, y) {
-    const hit = pick(x, y);
-    if (hit) longHit(hit.chunk, lump.worldToLocal(hit.point));
-  }
+  // 꾹 누름: 금 간 파편이면 떨어지고, 성한 왁스면 거미줄 모양으로 금이 간다, 클레이면 눌린다
   function longHit(chunk, local) {
     presses++;
-    dent(local);
     squashV -= 0.9;
-    if (chunk && chunk.state === CRACKED) {
-      dropAround(chunk, local);
-      return;
-    }
-    shatter(local);
+    if (!chunk) { dent(local); return; }
+    if (chunk.state === CRACKED) { dropAround(chunk, local, DROP_R); return; }
+    if (chunk.layer === 0) dent(local);
+    shatter(local, chunk.layer, 1, CRUMB_R);
   }
 
-  // 누른 자리 근처의 성한 조각들을 거미줄 모양으로 다시 자른다
-  function shatter(P) {
-    const pArr = [P.x, P.y, P.z];
-    const seeds = webSeeds(pArr);
-    const affected = chunks.filter((c) => c.state === INTACT && c.center.distanceTo(P) < WEB_R);
+  // 누른 자리 근처의 같은 겹 성한 조각들을 거미줄 모양으로 다시 자른다
+  function shatter(P, layer, scale, crumbR, quiet = false) {
+    const box = waxLayers[layer].box;
+    const seeds = webSeeds([P.x, P.y, P.z], box, scale);
+    const affected = chunks.filter((c) => c.layer === layer && c.state === INTACT && c.center.distanceTo(P) < WEB_R * scale);
     if (!affected.length) return;
-    let crumbs = 0, cracked = 0;
+    let crumbs = 0;
     for (const old of affected) {
       removePiece(old);
       for (const polys of splitPolys(old.polys, seeds)) {
         if (!polys.length) continue;
-        const piece = buildPiece(polys);
-        const c = addPiece(piece, CRACKED);
+        const piece = buildPiece(polys, box);
+        const c = addPiece(piece, layer, CRACKED);
         const d = piece.center.distanceTo(P);
-        if (d < CRUMB_R) {
+        if (d < crumbR) {
           fall(c, 0.6);
           crumbs++;
         } else {
           // 가까울수록 더 들뜨고 비틀어진다 → 거미줄 금이 보인다
-          const k = Math.exp(-d / 0.55);
-          c.mesh.position.copy(c.center).addScaledVector(c.normal, 0.008 + 0.035 * k + Math.random() * 0.006);
-          const tw = 0.02 + 0.12 * k;
+          const k = Math.exp(-d / 0.6);
+          c.mesh.position.copy(c.center).addScaledVector(c.normal, 0.01 + 0.035 * k + Math.random() * 0.006);
+          const tw = 0.02 + 0.1 * k;
           c.mesh.rotation.set((Math.random() - 0.5) * tw, (Math.random() - 0.5) * tw, (Math.random() - 0.5) * tw);
-          cracked++;
         }
       }
     }
-    sound.crack(4 + crumbs);
-    navigator.vibrate?.([18, 30, 18]);
+    sound.crack(quiet ? 1 + crumbs : 4 + crumbs);
+    navigator.vibrate?.(quiet ? 8 : [18, 30, 18]);
     checkFinish();
   }
 
-  function dropAround(hitChunk, local) {
+  function dropAround(hitChunk, local, radius, quiet = false) {
     let n = 0;
     for (const c of chunks) {
       if (c.state !== CRACKED) continue;
-      if (c === hitChunk || c.center.distanceTo(local) < DROP_R) { fall(c); n++; }
+      if (c === hitChunk || c.center.distanceTo(local) < radius) { fall(c); n++; }
     }
-    sound.crack(Math.max(1, n / 2));
-    navigator.vibrate?.(10);
+    sound.crack(quiet ? 1 : Math.max(1, n / 2));
+    navigator.vibrate?.(quiet ? 6 : 10);
     checkFinish();
   }
 
@@ -325,13 +353,13 @@ export async function startPlay(data) {
   }
 
   // 누른 자리의 클레이가 들어간다 (말랑해서 꽤 들어가고, 돌아오지 않음)
-  function dent(p) {
+  function dent(p, amount = 1) {
     const pos = soapGeo.attributes.position;
     for (let i = 0; i < pos.count; i++) {
       const d = Math.hypot(restPos[i * 3] - p.x, restPos[i * 3 + 1] - p.y, restPos[i * 3 + 2] - p.z);
       if (d >= DENT_R) continue;
       const f = (1 - (d / DENT_R) ** 2) ** 2;
-      dents[i] = Math.min(DENT_MAX, dents[i] + DENT_DEPTH * f);
+      dents[i] = Math.min(DENT_MAX, dents[i] + DENT_DEPTH * f * amount);
       pos.setXYZ(
         i,
         restPos[i * 3] - restNrm[i * 3] * dents[i],
@@ -369,7 +397,7 @@ export async function startPlay(data) {
   }
 
   // 떨어지는 파편이 덩어리를 뚫고 지나가지 않게 밀어낸다
-  const half = new THREE.Vector3(OUTER.w / 2, OUTER.h / 2, OUTER.d / 2);
+  const half = new THREE.Vector3(outerBox.w / 2, outerBox.h / 2, outerBox.d / 2);
   const invQ = new THREE.Quaternion();
   const lp = new THREE.Vector3(), lv = new THREE.Vector3();
   function pushOutOfLump(c) {
@@ -393,12 +421,12 @@ export async function startPlay(data) {
       if (c.state >= FALLING) continue;
       c.state = CRACKED;
       c.pending = true;
-      c.delay = Math.random() * 0.6;
+      c.delay = Math.random() * 0.6 + (waxLayers.length - 1 - c.layer) * 0.15; // 바깥 겹부터
     }
     sound.crack(6);
     sound.crack(4, 0.2);
     navigator.vibrate?.([20, 40, 20]);
-    setTimeout(() => $('done').classList.add('show'), 1800);
+    setTimeout(() => $('done').classList.add('show'), 1900);
   }
 
   // 버튼

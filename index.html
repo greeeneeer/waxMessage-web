@@ -28,21 +28,18 @@
 
     <p id="notice" class="notice" hidden>링크가 잘못됐어요. 새로 만들어 보세요.</p>
 
-    <div class="previews">
-      <figure><canvas id="previewOuter" width="480" height="340" aria-label="왁스 겉면 미리보기"></canvas><figcaption>겉 (왁스)</figcaption></figure>
-      <figure><canvas id="preview" width="480" height="340" aria-label="클레이 미리보기"></canvas><figcaption>속 (클레이)</figcaption></figure>
-    </div>
-
-    <section class="field">
-      <label class="field-title" for="o1">왁스 겉면 글씨 <small>깨기 전에 보여요 · 비워도 돼요</small></label>
-      <div class="line"><input id="o1" type="text" maxlength="10" autocomplete="off" placeholder="예: 무대 날짜 공개" /><span id="m1" class="count">0/10</span></div>
-      <div class="line"><input id="o2" type="text" maxlength="10" autocomplete="off" placeholder="둘째 줄" /><span id="m2" class="count">0/10</span></div>
-    </section>
+    <div id="previews" class="previews"></div>
 
     <section class="field">
       <label class="field-title" for="l1">숨길 글씨 <small>클레이에 쓰여요 · 두 줄, 줄마다 10자</small></label>
       <div class="line"><input id="l1" type="text" maxlength="10" autocomplete="off" placeholder="첫째 줄" /><span id="n1" class="count">0/10</span></div>
       <div class="line"><input id="l2" type="text" maxlength="10" autocomplete="off" placeholder="둘째 줄 (비워도 돼요)" /><span id="n2" class="count">0/10</span></div>
+    </section>
+
+    <section class="field">
+      <h2 class="field-title">왁스 <small>바깥 겹부터 · 겹마다 색과 겉면 글씨</small></h2>
+      <div id="layers" class="layers"></div>
+      <button id="addLayer" type="button" class="secondary add-layer">+ 왁스 겹 추가</button>
     </section>
 
     <section class="field">
@@ -57,11 +54,6 @@
       <h2 class="field-title">비누 색</h2>
       <div id="clays" class="swatches"></div>
     </section>
-    <section class="field">
-      <h2 class="field-title">왁스 색</h2>
-      <div id="waxes" class="swatches"></div>
-    </section>
-
     <section class="actions">
       <input id="link" class="link" type="text" readonly aria-label="보낼 링크" />
       <button id="copy" class="primary" disabled>링크 복사하기</button>

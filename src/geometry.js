@@ -6,15 +6,17 @@ import * as THREE from 'three';
 import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import { SOAP, LABEL } from './share.js';
 
-// 왁스: 비누 표면에서 gap만큼 떨어져 두께 t로 덮는다
-export const WAX = { gap: 0.015, t: 0.1 };
-const grow = WAX.gap + WAX.t;
-export const OUTER = { w: SOAP.w + 2 * grow, h: SOAP.h + 2 * grow, d: SOAP.d + 2 * grow, r: SOAP.r + grow };
+// 왁스 겹: 비누 표면에서 GAP만큼 떨어져 한 겹에 두께 T씩 쌓인다. j = 안쪽부터 센 겹 번호 (0 = 클레이 바로 위)
+export const WAX = { gap: 0.012, t: 0.09 };
+export function waxBox(j) {
+  const out = WAX.gap + (j + 1) * WAX.t;
+  return { w: SOAP.w + 2 * out, h: SOAP.h + 2 * out, d: SOAP.d + 2 * out, r: SOAP.r + out, t: WAX.t - 0.006 };
+}
 
 const clamp = (v, m) => Math.max(-m, Math.min(m, v));
 
 // 둥근 상자 표면 위 점의 바깥 방향
-export function roundNormal(p, box = OUTER) {
+export function roundNormal(p, box) {
   const nx = p[0] - clamp(p[0], box.w / 2 - box.r);
   const ny = p[1] - clamp(p[1], box.h / 2 - box.r);
   const nz = p[2] - clamp(p[2], box.d / 2 - box.r);
@@ -117,8 +119,8 @@ export function splitPolys(polys, seeds, K = 9) {
 }
 
 // 처음 상태: 왁스 껍질을 큼직한 조각 count개로 나눈 다각형 묶음들
-export function initialWaxPolys(count = 30) {
-  const g = roundedBox(OUTER.w, OUTER.h, OUTER.d, OUTER.r, 9);
+export function initialWaxPolys(box, count = 30) {
+  const g = roundedBox(box.w, box.h, box.d, box.r, 9);
   const P = g.attributes.position.array;
   const T = P.length / 9;
   const tri = (i, k) => [P[i * 9 + k * 3], P[i * 9 + k * 3 + 1], P[i * 9 + k * 3 + 2]];
@@ -144,9 +146,10 @@ export function initialWaxPolys(count = 30) {
   return splitPolys(polys, seeds).filter((g2) => g2.length);
 }
 
-// 누른 자리 P(덩어리 기준 좌표)를 중심으로 거미줄 모양 씨앗: 바큇살 방향으로 고리마다 하나씩
-export function webSeeds(P) {
-  const N = roundNormal(P);
+// 누른 자리 P(덩어리 기준 좌표)를 중심으로 거미줄 모양 씨앗: 바큇살 방향으로 고리마다 하나씩.
+// 고리 간격이 바깥으로 갈수록 넓어서 가운데는 잘게, 멀수록 큰 조각이 된다. scale로 전체 크기 조절.
+export function webSeeds(P, box, scale = 1) {
+  const N = roundNormal(P, box);
   const a = Math.abs(N[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0];
   let T1 = [N[1] * a[2] - N[2] * a[1], N[2] * a[0] - N[0] * a[2], N[0] * a[1] - N[1] * a[0]];
   const l1 = Math.hypot(...T1);
@@ -154,13 +157,13 @@ export function webSeeds(P) {
   const T2 = [N[1] * T1[2] - N[2] * T1[1], N[2] * T1[0] - N[0] * T1[2], N[0] * T1[1] - N[1] * T1[0]];
 
   const seeds = [[...P]];
-  const rings = [0.09, 0.2, 0.36, 0.58, 0.88, 1.28];
-  const spokes = 6 + Math.floor(Math.random() * 3);
+  const rings = [0.16, 0.45, 0.85, 1.35].map((r) => r * scale);
+  const spokes = 5 + Math.floor(Math.random() * 2);
   const offset = Math.random() * Math.PI * 2;
   // 바큇살 방향은 고리마다 거의 같게 (그래야 금이 길게 뻗어 나간다)
   const angles = Array.from({ length: spokes }, (_, j) => offset + ((j + (Math.random() - 0.5) * 0.4) * Math.PI * 2) / spokes);
   rings.forEach((r, k) => {
-    const n = k === 0 ? 4 : spokes;
+    const n = k === 0 ? 3 : spokes;
     for (let j = 0; j < n; j++) {
       const th = (k === 0 ? offset + (j * Math.PI * 2) / n : angles[j]) + (Math.random() - 0.5) * 0.12;
       const rr = r * (1 + (Math.random() - 0.5) * 0.3);
@@ -182,8 +185,8 @@ function polyArea(p) {
 }
 
 // 다각형 묶음 하나로 왁스 파편 하나를 만든다: 바깥면(글씨 텍스처)·안쪽면, 깨진 자리의 단면
-export function buildPiece(polys) {
-  const t = WAX.t;
+export function buildPiece(polys, box) {
+  const t = box.t;
   const pos = [], nrm = [], col = [], uv = [];
   const wpos = [], wnrm = [];
   const ctr = [0, 0, 0], nsum = [0, 0, 0];
@@ -192,7 +195,7 @@ export function buildPiece(polys) {
   const neg = (v) => [-v[0], -v[1], -v[2]];
 
   for (const { p: poly, l: labels } of polys) {
-    const nr = poly.map((q) => roundNormal(q));
+    const nr = poly.map((q) => roundNormal(q, box));
     const inn = poly.map((q, k) => [q[0] - nr[k][0] * t, q[1] - nr[k][1] * t, q[2] - nr[k][2] * t]);
     const a = polyArea(poly);
     const pc = [0, 0, 0];
@@ -229,7 +232,7 @@ export function buildPiece(polys) {
     }
 
     ctr[0] += pc[0] * a; ctr[1] += pc[1] * a; ctr[2] += pc[2] * a;
-    const pn = roundNormal(pc);
+    const pn = roundNormal(pc, box);
     nsum[0] += pn[0] * a; nsum[1] += pn[1] * a; nsum[2] += pn[2] * a;
     area += a;
   }
