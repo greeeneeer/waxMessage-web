@@ -17,7 +17,7 @@ function saveDraft(s) {
 }
 
 // 보낼 링크의 앞부분. 내 컴퓨터(localhost)에서 만들어도 다른 사람이 열 수 있게 공개 주소로 만든다.
-const PUBLIC_URL = 'https://greeeneeer.github.io/wax-soap-web/';
+const PUBLIC_URL = 'https://greeeneeer.github.io/waxMessage-web/';
 function linkBase() {
   const local = ['localhost', '127.0.0.1', '[::1]', ''].includes(location.hostname);
   return local ? PUBLIC_URL : `${location.origin}${location.pathname}`;
