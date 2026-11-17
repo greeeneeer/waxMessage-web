@@ -47,13 +47,19 @@ export function audioTrack() {
 }
 
 // 시작 소리. 고른 후보에 배경 반복(loop)이 있으면 시작 부분 뒤로 이어서 계속 깐다 (stopRoll로 멈춤)
+let rollPlayed = false;
 export function drumroll() {
-  if (!ctx) return;
+  if (!ctx || rollPlayed) return; // 한 판에 한 번만
+  rollPlayed = true;
   const v = chosen('roll');
   if (!v.loop) { play(make('roll'), 0.9, 1, 0); return; }
   const sr = ctx.sampleRate;
-  const intro = toBuffer(ctx, [v.intro(sr)]);
-  play(intro, 0.9, 1, 0);
+  const intro = ctx.createBufferSource();
+  intro.buffer = toBuffer(ctx, [v.intro(sr)]);
+  const ig = ctx.createGain();
+  ig.gain.value = 0.9;
+  intro.connect(ig).connect(master);
+  intro.start();
   const src = ctx.createBufferSource();
   src.buffer = toBuffer(ctx, [v.loop(sr)]);
   src.loop = true;
@@ -61,17 +67,37 @@ export function drumroll() {
   g.gain.value = 0.9 * ROLL_BG;
   src.connect(g).connect(master);
   src.start(ctx.currentTime + 2.6);
-  rollLoop = { src, g };
+  rollLoop = { srcs: [intro, src], gains: [ig, g] };
 }
+// 롤을 멈추고 연결까지 끊는다. 다른 화면에 갔다 돌아와 소리 장치가 다시 켜져도 롤이 되살아나지 않게.
 export function stopRoll() {
   if (!rollLoop) return;
-  const { src, g } = rollLoop;
-  const t = ctx.currentTime;
-  g.gain.setValueAtTime(g.gain.value, t);
-  g.gain.linearRampToValueAtTime(0, t + 0.6);
-  src.stop(t + 0.7);
+  const { srcs, gains } = rollLoop;
   rollLoop = null;
+  const t = ctx.currentTime;
+  for (const g of gains) {
+    g.gain.cancelScheduledValues(t);
+    g.gain.setValueAtTime(g.gain.value, t);
+    g.gain.linearRampToValueAtTime(0, t + 0.6);
+  }
+  const kill = () => {
+    for (const src of srcs) {
+      src.loop = false;
+      try { src.stop(); } catch { /* 이미 멈춤 */ }
+      src.disconnect();
+    }
+    gains.forEach((g) => g.disconnect());
+  };
+  setTimeout(kill, 700);
 }
+
+// 다른 화면(앱·탭)으로 가면 소리를 멈췄다가, 돌아오면 다시 켠다
+document.addEventListener('visibilitychange', () => {
+  if (!ctx) return;
+  if (document.hidden) ctx.suspend();
+  else ctx.resume();
+});
+
 export function cheer(delay = 0) {
   if (ctx) play(make('cheer'), 0.8, 1, delay);
 }
