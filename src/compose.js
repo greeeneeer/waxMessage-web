@@ -16,6 +16,13 @@ function saveDraft(s) {
   try { localStorage.setItem(DRAFT_KEY, JSON.stringify(s)); } catch { /* 무시 */ }
 }
 
+// 보낼 링크의 앞부분. 내 컴퓨터(localhost)에서 만들어도 다른 사람이 열 수 있게 공개 주소로 만든다.
+const PUBLIC_URL = 'https://greeeneeer.github.io/wax-soap-web/';
+function linkBase() {
+  const local = ['localhost', '127.0.0.1', '[::1]', ''].includes(location.hostname);
+  return local ? PUBLIC_URL : `${location.origin}${location.pathname}`;
+}
+
 const layerName = (i) => (i === 0 ? '겉 왁스' : `속 왁스 ${i}`);
 
 export function startCompose() {
@@ -203,7 +210,7 @@ export function startCompose() {
     saveDraft({ text: state.text, layers: state.layers.map((l) => ({ w: l.w, k: l.k, text: l.text })), f: state.f, c: state.c, k: state.k });
     const data = currentData();
     const ok = !!data.t.trim();
-    $('link').value = ok ? `${location.origin}${location.pathname}#${encode(data)}` : '';
+    $('link').value = ok ? `${linkBase()}#${encode(data)}` : '';
     $('link').placeholder = '';
     ['copy', 'share', 'try'].forEach((id) => ($(id).disabled = !ok));
     drawPreviews();
