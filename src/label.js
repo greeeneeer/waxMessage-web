@@ -15,7 +15,8 @@ export async function ensureFont(f, text) {
 }
 
 // 투명 배경 위에 글씨만 그린다. 인쇄 느낌을 위해 잉크에 작은 빈틈을 뿌린다.
-export function drawLabel(ctx, W, H, data, { placeholder = '' } = {}) {
+// fitTexts: 여러 글씨를 같은 크기로 쓰고 싶을 때, 그중 가장 긴 것에 맞춘 크기를 쓴다 (버튼용)
+export function drawLabel(ctx, W, H, data, { placeholder = '', fitTexts = null, pad = 0.07, maxH = 0.62 } = {}) {
   ctx.clearRect(0, 0, W, H);
   const empty = !data.t.trim();
   const text = empty ? placeholder : data.t;
@@ -23,15 +24,15 @@ export function drawLabel(ctx, W, H, data, { placeholder = '' } = {}) {
 
   const [family, weight] = FONTS[data.f];
   const lines = text.split('\n');
-  const padX = W * 0.07;
-  const padY = H * 0.1;
+  const padX = W * pad;
+  const padY = H * pad * 1.4;
   const availW = W - padX * 2;
   const availH = H - padY * 2;
   const lh = 1.18;
 
-  let size = Math.min(availH / (lines.length * lh), availH * 0.62);
+  let size = Math.min(availH / (lines.length * lh), availH * maxH);
   ctx.font = `${weight} ${size}px "${family}", sans-serif`;
-  const widest = Math.max(...lines.map((l) => ctx.measureText(l).width), 1);
+  const widest = Math.max(...(fitTexts || lines).map((l) => ctx.measureText(l).width), 1);
   if (widest > availW) size *= availW / widest;
   ctx.font = `${weight} ${size}px "${family}", sans-serif`;
 

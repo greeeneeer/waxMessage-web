@@ -4,7 +4,10 @@
 // - 꾹 누른 채로 끌면: 지나가는 선을 따라 파사삭 연달아 부서진다
 // - 금 간 왁스를 한 번 더 누르면: 그 파편들이 무대 바닥으로 떨어진다
 // - 끌면(꾹 누르기 전에 움직이거나 바깥을 끌면) 카메라 시점만 돈다. 덩어리는 돌지 않는다.
-// - 클레이 글씨가 95% 드러나면 아래에서 왁뿌 버튼 두 개(다시 깨기 / 나도 만들기)가 올라온다. 꾹 누르면 왁스가 깨지며 눌린다.
+// - 처음 화면을 만지면 팀파니 "두구두구… 둥!"이 울리고, 그때부터 화면과 소리를 녹화한다
+// - 클레이 글씨가 95% 드러나면 휘파람·환호와 함께 컨페티가 떨어지고, 아래에서 왁뿌 버튼
+//   (다시 깨기 / 나도 만들기 / 영상 저장)이 올라온다. 꾹 누르면 왁스가 깨지며 눌린다.
+// - 그 뒤로는 드러난 클레이를 잡아당기면 점토처럼 늘어나거나 눌린다
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
@@ -12,6 +15,7 @@ import { PALETTE, LABEL } from './share.js';
 import { drawLabel, ensureFont } from './label.js';
 import { soapGeometry, initialWaxPolys, webSeeds, splitPolys, buildPiece, waxBox } from './geometry.js';
 import { buildStage } from './stage.js';
+import { makeConfetti } from './confetti.js';
 import * as sound from './sound.js';
 
 // 깨지는 정도 (겹 하나 기준 20~30번 누르면 다 깨지도록 맞춘 값)
@@ -27,12 +31,12 @@ const HOLD_MS = 420; // 이만큼 누르고 있으면 '꾹'
 const BTN_SCALE = 0.3;
 const BTN_Y = -1.15;
 const BTN_Z = 2.0;
-const BTN_GAP_X = 0.68;
+const BTN_GAP_X = 1.18; // 버튼 사이 간격 (세 개일 때)
 const REVEAL_AT = 0.95; // 클레이 글씨 획의 이만큼이 드러나면 버튼이 올라온다
 
 const LUMP_Y = 0.35; // 덩어리가 떠 있는 높이
 const FLOOR_Y = -1.9;
-const TILT = 0.5; // 앞쪽으로 기운 각도 (좌우는 평평)
+const TILT = 0.78; // 앞쪽으로 기운 각도 (좌우는 평평). 가파를수록 윗면 글씨가 카메라를 향해 조명 반사가 덜하다
 
 const INTACT = 0, CRACKED = 1, FALLING = 2, GONE = 3;
 const UP = new THREE.Vector3(0, 1, 0);
@@ -45,6 +49,7 @@ export async function startPlay(data) {
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 0.85;
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
@@ -84,7 +89,7 @@ export async function startPlay(data) {
   const layers = data.layers; // 바깥부터
   await ensureFont(data.f, data.t + layers.map((l) => l.o || '').join(''));
   // 바탕색 + 인쇄된 글씨 텍스처. ink: 글씨만 그린 캔버스 (글씨가 얼마나 드러났는지 재는 데 씀)
-  const makeTex = (bg, text) => {
+  const makeTex = (bg, text, labelOpts) => {
     const tc = document.createElement('canvas');
     tc.width = 1024;
     tc.height = Math.round((1024 * LABEL.d) / LABEL.w);
@@ -95,7 +100,7 @@ export async function startPlay(data) {
     lc.width = tc.width;
     lc.height = tc.height;
     if (text && text.trim()) {
-      drawLabel(lc.getContext('2d'), lc.width, lc.height, { ...data, t: text });
+      drawLabel(lc.getContext('2d'), lc.width, lc.height, { ...data, t: text }, labelOpts);
       ctx.drawImage(lc, 0, 0);
     }
     const tex = new THREE.CanvasTexture(tc);
@@ -103,12 +108,12 @@ export async function startPlay(data) {
     tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
     return { tex, ink: lc };
   };
-  const waxMaterial = (color, text) => new THREE.MeshPhysicalMaterial({
-    map: makeTex(color, text).tex,
+  const waxMaterial = (color, text, labelOpts) => new THREE.MeshPhysicalMaterial({
+    map: makeTex(color, text, labelOpts).tex,
     vertexColors: true,
-    roughness: 0.38,
-    clearcoat: 0.5,
-    clearcoatRoughness: 0.35,
+    roughness: 0.5,
+    clearcoat: 0.25,
+    clearcoatRoughness: 0.5,
     envMapIntensity: ENV,
     side: THREE.DoubleSide,
   });
@@ -189,7 +194,7 @@ export async function startPlay(data) {
     const open = SAMPLES.filter((_, si) => cover.every((row) => !row[si] || row[si].state >= FALLING)).length;
     if (open / SAMPLES.length >= REVEAL_AT) {
       revealed = true;
-      setTimeout(showButtons, 500);
+      setTimeout(celebrate, 400);
     }
   }
   function removePiece(c) {
@@ -236,17 +241,31 @@ export async function startPlay(data) {
     const hit = raycaster.intersectObjects(targets, false)[0];
     if (!hit) return null;
     if (hit.object.userData.button) return { button: hit.object.userData.button };
-    return { local: lump.worldToLocal(hit.point.clone()), chunk: hit.object.userData.chunk ?? null };
+    return { local: lump.worldToLocal(hit.point.clone()), world: hit.point.clone(), chunk: hit.object.userData.chunk ?? null };
   }
 
+  let started = false;
   function onDown(e) {
     sound.unlock();
+    if (!started) {
+      started = true;
+      sound.drumroll();
+      startRecording();
+    }
     if (!e.isPrimary) {
       // 두 번째 손가락: 누르기를 취소하고 확대·축소는 OrbitControls에 맡긴다
       if (press) { clearTimeout(press.timer); press = null; controls.enabled = true; }
       return;
     }
     const hit = pick(e.clientX, e.clientY);
+    if (hit && revealed && !hit.button && !hit.chunk) {
+      // 글씨가 드러난 뒤: 클레이를 잡아당긴다
+      controls.enabled = false;
+      press = { mode: 'grab', x: e.clientX, y: e.clientY, lx: e.clientX, ly: e.clientY };
+      startGrab(hit.world, e.clientX, e.clientY);
+      try { canvas.setPointerCapture(e.pointerId); } catch { /* 합성 이벤트 등 */ }
+      return;
+    }
     if (hit && (hit.button || !finished)) {
       controls.enabled = false;
       const p = { x: e.clientX, y: e.clientY, lx: e.clientX, ly: e.clientY, t: performance.now(), mode: 'press', fired: false };
@@ -275,6 +294,7 @@ export async function startPlay(data) {
     }
     if (press.mode === 'orbit') orbit(e.clientX - press.lx, e.clientY - press.ly);
     if (press.mode === 'scrub') scrub(e.clientX, e.clientY);
+    if (press.mode === 'grab') moveGrab(e.clientX, e.clientY);
     press.lx = e.clientX;
     press.ly = e.clientY;
   }
@@ -282,6 +302,7 @@ export async function startPlay(data) {
   function onUp(e) {
     if (!e.isPrimary) return;
     if (press && press.mode === 'press' && !press.fired && e.type === 'pointerup') shortPress(press.x, press.y);
+    if (press?.mode === 'grab') grab = null;
     if (press) clearTimeout(press.timer);
     press = null;
     controls.enabled = true;
@@ -455,10 +476,14 @@ export async function startPlay(data) {
     const clayMat = new THREE.MeshStandardMaterial({ map: makeTex(clayColor, '').tex, roughness: 0.78, envMapIntensity: ENV });
     const box = waxBox(0);
     const defs = [
-      ['다시 깨기', -BTN_GAP_X, () => location.reload()],
-      ['나도 만들기', BTN_GAP_X, () => (location.href = location.pathname)],
+      ['다시 깨기', () => location.reload()],
+      ['나도 만들기', () => (location.href = location.pathname)],
     ];
-    defs.forEach(([label, x, action], i) => {
+    if (canRecord()) defs.push(['영상 저장', () => saveVideo()]);
+    // 버튼 글씨는 모두 같은 크기, 가장 긴 글씨가 버튼 윗면을 거의 채우도록
+    const labelOpts = { fitTexts: defs.map((d) => d[0]), pad: 0.02, maxH: 0.9 };
+    defs.forEach(([label, action], i) => {
+      const x = (i - (defs.length - 1) / 2) * (defs.length === 2 ? BTN_GAP_X * 0.62 : BTN_GAP_X);
       const group = new THREE.Group();
       group.scale.setScalar(BTN_SCALE);
       group.rotation.x = TILT;
@@ -470,7 +495,7 @@ export async function startPlay(data) {
       clay.castShadow = clay.receiveShadow = true;
       clay.userData.button = btn;
       group.add(clay);
-      const mat = waxMaterial(innerWax, label);
+      const mat = waxMaterial(innerWax, label, labelOpts);
       btn.pieces = initialWaxPolys(box, 10).map((polys) => {
         const piece = buildPiece(polys, box);
         const mesh = new THREE.Mesh(piece.body, mat);
@@ -485,6 +510,93 @@ export async function startPlay(data) {
   }
   function showButtons() {
     for (const b of buttons) { b.group.visible = true; b.rise = 0; }
+  }
+
+  // 글씨가 드러났을 때: 휘파람·환호·컨페티, 그리고 버튼이 올라온다
+  function celebrate() {
+    sound.whistle();
+    sound.cheer(0.15);
+    confetti.start();
+    setTimeout(showButtons, 600);
+  }
+
+  // ---------- 컨페티 ----------
+  const confetti = makeConfetti(scene, FLOOR_Y);
+
+  // ---------- 영상 녹화 ----------
+  let recorder = null;
+  const recChunks = [];
+  function canRecord() {
+    return !!(window.MediaRecorder && canvas.captureStream);
+  }
+  function startRecording() {
+    if (recorder || !canRecord()) return;
+    try {
+      const stream = canvas.captureStream(30);
+      const audio = sound.audioTrack();
+      if (audio) stream.addTrack(audio);
+      const types = ['video/mp4;codecs=avc1.42E01E,mp4a.40.2', 'video/mp4', 'video/webm;codecs=vp9,opus', 'video/webm'];
+      const mimeType = types.find((t) => MediaRecorder.isTypeSupported(t));
+      recorder = new MediaRecorder(stream, mimeType ? { mimeType, videoBitsPerSecond: 6_000_000 } : undefined);
+      recorder.ondataavailable = (e) => { if (e.data.size) recChunks.push(e.data); };
+      recorder.start(1000);
+    } catch {
+      recorder = null;
+    }
+  }
+  function saveVideo() {
+    if (!recorder || recorder.state === 'inactive') return;
+    recorder.onstop = () => {
+      const type = recorder.mimeType || 'video/webm';
+      const blob = new Blob(recChunks, { type });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `메세지-왁뿌.${type.includes('mp4') ? 'mp4' : 'webm'}`;
+      document.body.append(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 60_000);
+    };
+    recorder.stop();
+  }
+
+  // ---------- 클레이 잡아당기기 (글씨가 드러난 뒤) ----------
+  // 잡은 자리 근처 꼭짓점이 손가락을 따라 움직인다. 놓아도 그 모양 그대로 남는다 (점토처럼).
+  const GRAB_R = 1.0;
+  const soapPos = soap.geometry.attributes.position;
+  let grab = null;
+  const grabPlane = new THREE.Plane();
+  const grabHit = new THREE.Vector3();
+  function startGrab(worldPoint, x, y) {
+    const local = lump.worldToLocal(worldPoint.clone());
+    const weights = new Float32Array(soapPos.count);
+    for (let i = 0; i < soapPos.count; i++) {
+      const d = Math.hypot(soapPos.getX(i) - local.x, soapPos.getY(i) - local.y, soapPos.getZ(i) - local.z);
+      weights[i] = d < GRAB_R ? (1 - (d / GRAB_R) ** 2) ** 2 : 0;
+    }
+    grabPlane.setFromNormalAndCoplanarPoint(camera.getWorldDirection(new THREE.Vector3()), worldPoint);
+    grab = { start: worldPoint.clone(), base: soapPos.array.slice(), weights };
+  }
+  function moveGrab(x, y) {
+    if (!grab) return;
+    const r = canvas.getBoundingClientRect();
+    ndc.set(((x - r.left) / r.width) * 2 - 1, -((y - r.top) / r.height) * 2 + 1);
+    raycaster.setFromCamera(ndc, camera);
+    if (!raycaster.ray.intersectPlane(grabPlane, grabHit)) return;
+    const delta = grabHit.clone().sub(grab.start);
+    if (delta.length() > 1.6) delta.setLength(1.6);
+    delta.applyQuaternion(lump.quaternion.clone().invert()); // 덩어리 기준 방향으로
+    const a = soapPos.array;
+    for (let i = 0; i < soapPos.count; i++) {
+      const w = grab.weights[i];
+      if (!w) continue;
+      a[i * 3] = grab.base[i * 3] + delta.x * w;
+      a[i * 3 + 1] = grab.base[i * 3 + 1] + delta.y * w;
+      a[i * 3 + 2] = grab.base[i * 3 + 2] + delta.z * w;
+    }
+    soapPos.needsUpdate = true;
+    soap.geometry.computeVertexNormals();
+    soap.geometry.computeBoundingSphere();
   }
   // 꾹 누르면 왁스가 깨져 떨어지고, 잠시 뒤 버튼 동작
   function pressButton(btn) {
@@ -551,6 +663,7 @@ export async function startPlay(data) {
       }
     }
 
+    confetti.update(dt);
     stage.update(time, camera);
     controls.update();
     renderer.render(scene, camera);

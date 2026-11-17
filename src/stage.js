@@ -5,7 +5,7 @@ export function buildStage(scene, { floorY, targetY }) {
   const top = 9;
 
   // 핀 조명
-  const spot = new THREE.SpotLight(0xfff0dc, 3.4, 0, 0.3, 0.45, 0);
+  const spot = new THREE.SpotLight(0xfff0dc, 2.4, 0, 0.3, 0.45, 0);
   spot.position.set(0, top, 0);
   spot.target.position.set(0, floorY, 0);
   spot.castShadow = true;
@@ -16,7 +16,7 @@ export function buildStage(scene, { floorY, targetY }) {
   scene.add(spot, spot.target);
 
   // 객석 쪽에서 아주 약하게 비추는 빛 (커튼 주름과 덩어리 앞면이 살짝 보이도록)
-  const fill = new THREE.DirectionalLight(0xffd9c4, 0.4);
+  const fill = new THREE.DirectionalLight(0xffd9c4, 0.6);
   fill.position.set(0, 3, 12);
   scene.add(fill, new THREE.AmbientLight(0xffffff, 0.04));
 

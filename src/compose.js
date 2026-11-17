@@ -82,7 +82,7 @@ export function startCompose() {
         <div class="swatches"></div>`;
       card.querySelector('b').textContent = layerName(i);
       const inputs = [...card.querySelectorAll('input')];
-      inputs[0].placeholder = i === 0 ? '겉면 글씨 (예: 무대 날짜 공개)' : '이 겹에 보일 글씨 (비워도 돼요)';
+      inputs[0].placeholder = '첫째 줄';
       bindLines(inputs, [...card.querySelectorAll('.count')], layer.lines);
 
       if (i > 0) {
@@ -166,7 +166,7 @@ export function startCompose() {
   if (navigator.share) {
     $('share').hidden = false;
     $('share').addEventListener('click', () => {
-      navigator.share({ title: '왁뿌 비누', text: '왁스를 깨면 글씨가 나와요', url: $('link').value }).catch(() => {});
+      navigator.share({ title: '메세지 왁뿌', text: '왁스를 깨면 글씨가 나와요', url: $('link').value }).catch(() => {});
     });
   }
   $('try').addEventListener('click', () => {
@@ -183,7 +183,7 @@ export function startCompose() {
     const box = $('previews');
     const items = [
       ...data.layers.map((l, i) => [PALETTE.wax[l.w][0], { ...data, t: l.o }, layerName(i), i === 0 ? '겉면 글씨' : '']),
-      [PALETTE.clay[data.c][0], data, '클레이 (숨긴 글씨)', '숨길 글씨'],
+      [PALETTE.clay[data.c][0], data, '클레이', '숨길 글씨'],
     ];
     box.textContent = '';
     for (const [color, d2, caption, placeholder] of items) {
@@ -212,7 +212,7 @@ export function startCompose() {
     const data = currentData();
     const ok = !!data.t.trim();
     $('link').value = ok ? `${location.origin}${location.pathname}#${encode(data)}` : '';
-    $('link').placeholder = '숨길 글씨를 쓰면 보낼 링크가 생겨요';
+    $('link').placeholder = '';
     ['copy', 'share', 'try'].forEach((id) => ($(id).disabled = !ok));
     drawPreviews();
   }
