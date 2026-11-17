@@ -70,6 +70,10 @@ export async function startPlay(data) {
   canvas.addEventListener('pointermove', onMove);
   canvas.addEventListener('pointerup', onUp);
   canvas.addEventListener('pointercancel', onUp);
+  // 아이폰: 꾹 누를 때 글자 선택·복사 메뉴·확대경이 뜨지 않게
+  canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+  canvas.addEventListener('touchstart', (e) => e.preventDefault(), { passive: false });
+  document.addEventListener('selectstart', (e) => e.preventDefault());
 
   const controls = new OrbitControls(camera, canvas);
   controls.enableDamping = true;
@@ -567,7 +571,9 @@ export async function startPlay(data) {
       const mimeType = types.find((t) => MediaRecorder.isTypeSupported(t));
       recorder = new MediaRecorder(stream, mimeType ? { mimeType, videoBitsPerSecond: 6_000_000 } : undefined);
       recorder.ondataavailable = (e) => { if (e.data.size) recChunks.push(e.data); };
-      recorder.start(1000);
+      // 조각 나누지 않고 한 덩어리로 녹화한다. 1초씩 잘라 이어 붙이면 아이폰 사파리가 영상 길이를
+      // 엉뚱하게(수백만 시간) 적어서 재생기가 길이를 잘못 보여 준다.
+      recorder.start();
     } catch {
       recorder = null;
     }

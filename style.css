@@ -65,7 +65,15 @@ button:disabled { opacity: 0.4; cursor: default; }
 .compose, .play { display: none; }
 body.mode-compose .compose { display: block; }
 body.mode-play .play { display: block; }
-body.mode-play { overflow: hidden; overscroll-behavior: none; background: #0d0a0b; }
+body.mode-play {
+  overflow: hidden;
+  overscroll-behavior: none;
+  background: #0d0a0b;
+  /* 꾹 눌러 깨는 화면이라 글자 선택·복사 메뉴·길게 누르기 메뉴를 끈다 (아이폰) */
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
 
 /* 작성 화면 */
 .compose {
