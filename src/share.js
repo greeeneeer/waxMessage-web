@@ -32,9 +32,9 @@ export const PALETTE = {
 
 // [CSS 글꼴 이름, 굵기, 화면에 보일 이름]
 export const FONTS = [
-  ['Jua', 400, '동글'],
-  ['Gaegu', 700, '손글씨'],
-  ['Do Hyeon', 400, '또박'],
+  ['Noto Sans KR', 800, '고딕'],
+  ['Black Han Sans', 400, '굵은 고딕'],
+  ['Gothic A1', 600, '가는 고딕'],
 ];
 
 const clampIndex = (v, list) => (Number.isInteger(v) && v >= 0 && v < list.length ? v : 0);

@@ -1,15 +1,25 @@
 // 둥근 비누 모양과, 미리 조각내 둔 왁스 껍질.
 import * as THREE from 'three';
-import { SOAP } from './share.js';
+import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
+import { SOAP, LABEL } from './share.js';
 
 // 왁스: 비누 표면에서 gap만큼 떨어져 두께 t로 덮는다
-export const WAX = { gap: 0.02, t: 0.07 };
+export const WAX = { gap: 0.015, t: 0.06 };
 const grow = WAX.gap + WAX.t;
 export const OUTER = { w: SOAP.w + 2 * grow, h: SOAP.h + 2 * grow, d: SOAP.d + 2 * grow, r: SOAP.r + grow };
 
 const clamp = (v, m) => Math.max(-m, Math.min(m, v));
 
-// 촘촘하게 나뉜 상자를 모서리가 둥근 상자로 바꾼다. 평평한 면도 고르게 잘게 나뉘어 있어 조각내기 좋다.
+// 둥근 상자 표면 위 점의 바깥 방향
+function roundNormal(p, box) {
+  const nx = p[0] - clamp(p[0], box.w / 2 - box.r);
+  const ny = p[1] - clamp(p[1], box.h / 2 - box.r);
+  const nz = p[2] - clamp(p[2], box.d / 2 - box.r);
+  const len = Math.hypot(nx, ny, nz) || 1;
+  return [nx / len, ny / len, nz / len];
+}
+
+// 촘촘하게 나뉜 상자를 모서리가 둥근 상자로 바꾼다.
 export function roundedBox(w, h, d, r, density) {
   const seg = (s) => Math.max(2, Math.round(s * density));
   const g = new THREE.BoxGeometry(w, h, d, seg(w), seg(h), seg(d)).toNonIndexed();
@@ -29,129 +39,160 @@ export function roundedBox(w, h, d, r, density) {
   return g;
 }
 
-// 왁스 껍질을 보로노이 방식으로 약 count개 조각으로 나눈다.
-// 조각마다 바깥면·안쪽면(body)과, 깨졌을 때만 보이는 단면(wall)을 따로 만든다.
-export function buildWaxChunks(count = 110) {
-  const g = roundedBox(OUTER.w, OUTER.h, OUTER.d, OUTER.r, 14);
+// 비누: 윗면에 글씨 텍스처가 입혀지도록 위에서 내려다본 좌표를 붙이고, 눌림 자국을 낼 수 있게 꼭짓점을 공유시킨다.
+export function soapGeometry() {
+  const g = roundedBox(SOAP.w, SOAP.h, SOAP.d, SOAP.r, 16);
+  const p = g.attributes.position;
+  const n = g.attributes.normal;
+  const uv = new Float32Array(p.count * 2);
+  for (let i = 0; i < p.count; i++) {
+    if (n.getY(i) > 0.5) {
+      uv[i * 2] = (p.getX(i) + LABEL.w / 2) / LABEL.w;
+      uv[i * 2 + 1] = 1 - (p.getZ(i) + LABEL.d / 2) / LABEL.d;
+    } else {
+      uv[i * 2] = -1; // 텍스처 바깥 = 가장자리 색(클레이 색)
+      uv[i * 2 + 1] = -1;
+    }
+  }
+  g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+  const merged = mergeVertices(g, 1e-4);
+  merged.computeVertexNormals();
+  return merged;
+}
+
+// 볼록 다각형을 평면 n·x <= d 쪽만 남기고 자른다. 변마다 원래 변('o')인지 잘린 자리('c')인지 기억한다.
+function clip(poly, labels, n, d) {
+  const out = [], outL = [];
+  const L = poly.length;
+  const side = (p) => n[0] * p[0] + n[1] * p[1] + n[2] * p[2] - d;
+  for (let i = 0; i < L; i++) {
+    const A = poly[i], B = poly[(i + 1) % L], lab = labels[i];
+    const da = side(A), db = side(B);
+    const cut = () => {
+      const t = da / (da - db);
+      return [A[0] + (B[0] - A[0]) * t, A[1] + (B[1] - A[1]) * t, A[2] + (B[2] - A[2]) * t];
+    };
+    if (da <= 0) {
+      out.push(A);
+      outL.push(lab);
+      if (db > 0) { out.push(cut()); outL.push('c'); }
+    } else if (db <= 0) {
+      out.push(cut());
+      outL.push(lab);
+    }
+  }
+  return [out, outL];
+}
+
+// 왁스 껍질을 약 count개의 파편으로 나눈다 (3D 보로노이로 정확히 잘라서 가장자리가 매끈한 직선/곡선이 된다).
+// 조각마다 바깥면·안쪽면(body)과, 떨어질 때 보이는 단면(wall)을 만든다.
+export function buildWaxChunks(count = 90) {
+  const g = roundedBox(OUTER.w, OUTER.h, OUTER.d, OUTER.r, 8);
   const P = g.attributes.position.array;
-  const N = g.attributes.normal.array;
   const T = P.length / 9;
   const t = WAX.t;
+  const tri = (i, k) => [P[i * 9 + k * 3], P[i * 9 + k * 3 + 1], P[i * 9 + k * 3 + 2]];
 
-  // 삼각형 중심과 넓이
-  const cen = new Float32Array(T * 3);
+  // 삼각형 넓이 (씨앗을 표면에 고르게 뿌리기 위해)
   const area = new Float32Array(T);
-  const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3();
-  const ab = new THREE.Vector3(), ac = new THREE.Vector3();
   let total = 0;
   for (let i = 0; i < T; i++) {
-    a.fromArray(P, i * 9); b.fromArray(P, i * 9 + 3); c.fromArray(P, i * 9 + 6);
-    cen[i * 3] = (a.x + b.x + c.x) / 3;
-    cen[i * 3 + 1] = (a.y + b.y + c.y) / 3;
-    cen[i * 3 + 2] = (a.z + b.z + c.z) / 3;
-    area[i] = ab.subVectors(b, a).cross(ac.subVectors(c, a)).length() / 2;
+    const a = tri(i, 0), b = tri(i, 1), c = tri(i, 2);
+    const u = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+    const v = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
+    area[i] = Math.hypot(u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]) / 2;
     total += area[i];
   }
-
-  // 조각의 씨앗 점: 서로 너무 가깝지 않게 골고루
-  const minD2 = (Math.sqrt(total / count) * 0.85) ** 2;
-  const order = [...Array(T).keys()];
-  for (let i = T - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [order[i], order[j]] = [order[j], order[i]];
-  }
-  const seeds = [];
-  for (const i of order) {
-    if (seeds.length >= count) break;
-    const x = cen[i * 3], y = cen[i * 3 + 1], z = cen[i * 3 + 2];
-    if (seeds.every((s) => (s[0] - x) ** 2 + (s[1] - y) ** 2 + (s[2] - z) ** 2 > minD2)) seeds.push([x, y, z]);
-  }
-
-  // 삼각형마다 가장 가까운 씨앗 = 속한 조각
-  const owner = new Int32Array(T);
-  for (let i = 0; i < T; i++) {
-    let best = 0, bd = Infinity;
-    for (let s = 0; s < seeds.length; s++) {
-      const dd = (seeds[s][0] - cen[i * 3]) ** 2 + (seeds[s][1] - cen[i * 3 + 1]) ** 2 + (seeds[s][2] - cen[i * 3 + 2]) ** 2;
-      if (dd < bd) { bd = dd; best = s; }
-    }
-    owner[i] = best;
-  }
-
-  // 모서리 공유 정보 (같은 위치의 꼭짓점은 같은 키)
-  const vkey = new Array(T * 3);
-  for (let v = 0; v < T * 3; v++) {
-    vkey[v] = `${Math.round(P[v * 3] * 1e4)},${Math.round(P[v * 3 + 1] * 1e4)},${Math.round(P[v * 3 + 2] * 1e4)}`;
-  }
-  const edgeKey = (i, e) => {
-    const ka = vkey[i * 3 + e], kb = vkey[i * 3 + ((e + 1) % 3)];
-    return ka < kb ? `${ka}|${kb}` : `${kb}|${ka}`;
+  const randomSurfacePoint = () => {
+    let r = Math.random() * total, i = 0;
+    while (i < T - 1 && (r -= area[i]) > 0) i++;
+    let s = Math.random(), q = Math.random();
+    if (s + q > 1) { s = 1 - s; q = 1 - q; }
+    const a = tri(i, 0), b = tri(i, 1), c = tri(i, 2);
+    return [0, 1, 2].map((k) => a[k] + (b[k] - a[k]) * s + (c[k] - a[k]) * q);
   };
-  const edges = new Map();
-  for (let i = 0; i < T; i++) {
-    for (let e = 0; e < 3; e++) {
-      const k = edgeKey(i, e);
-      const list = edges.get(k);
-      if (list) list.push(i); else edges.set(k, [i]);
-    }
+
+  // 씨앗: 크고 작은 파편이 섞이도록 간격을 느슨하게
+  const minD2 = (Math.sqrt(total / count) * 0.7) ** 2;
+  const seeds = [];
+  for (let tries = 0; seeds.length < count && tries < count * 60; tries++) {
+    const p = randomSurfacePoint();
+    if (seeds.every((s) => (s[0] - p[0]) ** 2 + (s[1] - p[1]) ** 2 + (s[2] - p[2]) ** 2 > minD2)) seeds.push(p);
   }
 
-  const parts = seeds.map(() => ({ pos: [], nrm: [], col: [], wpos: [], wnrm: [], ctr: new THREE.Vector3(), nsum: new THREE.Vector3(), ar: 0 }));
-  const pv = (v) => [P[v * 3], P[v * 3 + 1], P[v * 3 + 2]];
-  const nv = (v) => [N[v * 3], N[v * 3 + 1], N[v * 3 + 2]];
-  const inner = (v) => { const p = pv(v), n = nv(v); return [p[0] - n[0] * t, p[1] - n[1] * t, p[2] - n[2] * t]; };
-  const push = (arr, ...vs) => vs.forEach((v) => arr.push(v[0], v[1], v[2]));
-
-  const pa = new THREE.Vector3(), pb = new THREE.Vector3(), pc = new THREE.Vector3(), pbi = new THREE.Vector3();
-  const fn = new THREE.Vector3(), dir = new THREE.Vector3();
+  const parts = seeds.map(() => ({ pos: [], nrm: [], col: [], wpos: [], wnrm: [], ctr: [0, 0, 0], nsum: [0, 0, 0], ar: 0 }));
+  const pushV = (arr, v) => arr.push(v[0], v[1], v[2]);
+  const inner = (p, n) => [p[0] - n[0] * t, p[1] - n[1] * t, p[2] - n[2] * t];
+  const dist2 = (a, b) => (a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2 + (a[2] - b[2]) ** 2;
 
   for (let i = 0; i < T; i++) {
-    const part = parts[owner[i]];
-    const v0 = i * 3, v1 = i * 3 + 1, v2 = i * 3 + 2;
+    const a = tri(i, 0), b = tri(i, 1), c = tri(i, 2);
+    const cen = [(a[0] + b[0] + c[0]) / 3, (a[1] + b[1] + c[1]) / 3, (a[2] + b[2] + c[2]) / 3];
+    const near = seeds.map((s, k) => [dist2(s, cen), k]).sort((x, y) => x[0] - y[0]).slice(0, 9).map((x) => x[1]);
 
-    // 바깥면
-    push(part.pos, pv(v0), pv(v1), pv(v2));
-    push(part.nrm, nv(v0), nv(v1), nv(v2));
-    part.col.push(1, 1, 1, 1, 1, 1, 1, 1, 1);
-    // 안쪽면 (뒤집어서)
-    push(part.pos, inner(v0), inner(v2), inner(v1));
-    const neg = (v) => nv(v).map((x) => -x);
-    push(part.nrm, neg(v0), neg(v2), neg(v1));
-    part.col.push(0.94, 0.94, 0.94, 0.94, 0.94, 0.94, 0.94, 0.94, 0.94);
-
-    part.ctr.x += cen[i * 3] * area[i];
-    part.ctr.y += cen[i * 3 + 1] * area[i];
-    part.ctr.z += cen[i * 3 + 2] * area[i];
-    part.ar += area[i];
-    part.nsum.x += N[v0 * 3] * area[i];
-    part.nsum.y += N[v0 * 3 + 1] * area[i];
-    part.nsum.z += N[v0 * 3 + 2] * area[i];
-
-    // 다른 조각과 맞닿은 모서리에는 단면(벽)을 세운다
-    for (let e = 0; e < 3; e++) {
-      const others = edges.get(edgeKey(i, e)).filter((j) => j !== i);
-      if (others.length && owner[others[0]] === owner[i]) continue;
-      const ia = i * 3 + e, ib = i * 3 + ((e + 1) % 3), ic = i * 3 + ((e + 2) % 3);
-      pa.fromArray(pv(ia)); pb.fromArray(pv(ib)); pc.fromArray(pv(ic));
-      const ai = inner(ia), bi = inner(ib);
-      pbi.fromArray(bi);
-      fn.subVectors(pb, pa).cross(ab.subVectors(pbi, pa)).normalize();
-      dir.addVectors(pa, pb).multiplyScalar(0.5).sub(pc);
-      if (fn.dot(dir) >= 0) {
-        push(part.wpos, pv(ia), pv(ib), bi, pv(ia), bi, ai);
-      } else {
-        push(part.wpos, pv(ia), ai, bi, pv(ia), bi, pv(ib));
-        fn.negate();
+    for (const s of near) {
+      let poly = [a, b, c];
+      let labels = ['o', 'o', 'o'];
+      const S = seeds[s];
+      for (const j of near) {
+        if (j === s) continue;
+        const Q = seeds[j];
+        const n = [Q[0] - S[0], Q[1] - S[1], Q[2] - S[2]];
+        const d = (Q[0] ** 2 + Q[1] ** 2 + Q[2] ** 2 - S[0] ** 2 - S[1] ** 2 - S[2] ** 2) / 2;
+        [poly, labels] = clip(poly, labels, n, d);
+        if (poly.length < 3) break;
       }
-      for (let k = 0; k < 6; k++) part.wnrm.push(fn.x, fn.y, fn.z);
+      if (poly.length < 3) continue;
+
+      const part = parts[s];
+      const nr = poly.map((p) => roundNormal(p, OUTER));
+      const inn = poly.map((p, k) => inner(p, nr[k]));
+      const pc = [0, 0, 0];
+      poly.forEach((p) => { pc[0] += p[0] / poly.length; pc[1] += p[1] / poly.length; pc[2] += p[2] / poly.length; });
+
+      // 바깥면, 안쪽면 (부채꼴로 삼각형 나누기)
+      for (let k = 1; k < poly.length - 1; k++) {
+        pushV(part.pos, poly[0]); pushV(part.pos, poly[k]); pushV(part.pos, poly[k + 1]);
+        pushV(part.nrm, nr[0]); pushV(part.nrm, nr[k]); pushV(part.nrm, nr[k + 1]);
+        pushV(part.pos, inn[0]); pushV(part.pos, inn[k + 1]); pushV(part.pos, inn[k]);
+        pushV(part.nrm, nr[0].map((x) => -x)); pushV(part.nrm, nr[k + 1].map((x) => -x)); pushV(part.nrm, nr[k].map((x) => -x));
+        part.col.push(1, 1, 1, 1, 1, 1, 1, 1, 1, 0.93, 0.93, 0.93, 0.93, 0.93, 0.93, 0.93, 0.93, 0.93);
+      }
+
+      // 잘린 자리에는 단면(벽)
+      for (let k = 0; k < poly.length; k++) {
+        if (labels[k] !== 'c') continue;
+        const A = poly[k], B = poly[(k + 1) % poly.length];
+        const Ai = inn[k], Bi = inn[(k + 1) % poly.length];
+        const e = [B[0] - A[0], B[1] - A[1], B[2] - A[2]];
+        const f = [Bi[0] - A[0], Bi[1] - A[1], Bi[2] - A[2]];
+        let fn = [e[1] * f[2] - e[2] * f[1], e[2] * f[0] - e[0] * f[2], e[0] * f[1] - e[1] * f[0]];
+        const len = Math.hypot(...fn) || 1;
+        fn = fn.map((x) => x / len);
+        const dir = [(A[0] + B[0]) / 2 - pc[0], (A[1] + B[1]) / 2 - pc[1], (A[2] + B[2]) / 2 - pc[2]];
+        if (fn[0] * dir[0] + fn[1] * dir[1] + fn[2] * dir[2] >= 0) {
+          [A, B, Bi, A, Bi, Ai].forEach((v) => pushV(part.wpos, v));
+        } else {
+          [A, Ai, Bi, A, Bi, B].forEach((v) => pushV(part.wpos, v));
+          fn = fn.map((x) => -x);
+        }
+        for (let m = 0; m < 6; m++) pushV(part.wnrm, fn);
+      }
+
+      // 조각 중심과 평균 방향 (대략 넓이 가중)
+      const w = poly.length;
+      part.ctr[0] += pc[0] * w; part.ctr[1] += pc[1] * w; part.ctr[2] += pc[2] * w;
+      const pn = roundNormal(pc, OUTER);
+      part.nsum[0] += pn[0] * w; part.nsum[1] += pn[1] * w; part.nsum[2] += pn[2] * w;
+      part.ar += w;
     }
   }
 
   return parts
     .filter((p) => p.ar > 0)
     .map((p) => {
-      const center = p.ctr.divideScalar(p.ar);
-      const normal = p.nsum.normalize();
+      const center = new THREE.Vector3(...p.ctr).divideScalar(p.ar);
+      const normal = new THREE.Vector3(...p.nsum).normalize();
       const shift = (arr) => {
         const f = new Float32Array(arr);
         for (let k = 0; k < f.length; k += 3) { f[k] -= center.x; f[k + 1] -= center.y; f[k + 2] -= center.z; }
@@ -168,8 +209,7 @@ export function buildWaxChunks(count = 110) {
         wall = new THREE.BufferGeometry();
         wall.setAttribute('position', new THREE.BufferAttribute(shift(p.wpos), 3));
         wall.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(p.wnrm), 3));
-        const col = new Float32Array(p.wpos.length).fill(0.86);
-        wall.setAttribute('color', new THREE.BufferAttribute(col, 3));
+        wall.setAttribute('color', new THREE.BufferAttribute(new Float32Array(p.wpos.length).fill(0.9), 3));
       }
       return { center, normal, body, wall };
     });
