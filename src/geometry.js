@@ -4,7 +4,7 @@ import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import { SOAP, LABEL } from './share.js';
 
 // 왁스: 비누 표면에서 gap만큼 떨어져 두께 t로 덮는다
-export const WAX = { gap: 0.015, t: 0.06 };
+export const WAX = { gap: 0.015, t: 0.1 };
 const grow = WAX.gap + WAX.t;
 export const OUTER = { w: SOAP.w + 2 * grow, h: SOAP.h + 2 * grow, d: SOAP.d + 2 * grow, r: SOAP.r + grow };
 

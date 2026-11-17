@@ -35,6 +35,13 @@ export const FONTS = [
   ['Noto Sans KR', 800, '고딕'],
   ['Black Han Sans', 400, '굵은 고딕'],
   ['Gothic A1', 600, '가는 고딕'],
+  ['Noto Serif KR', 700, '명조'],
+  ['Song Myung', 400, '옛 명조'],
+  ['Do Hyeon', 400, '도톰'],
+  ['Jua', 400, '동글'],
+  ['Gaegu', 700, '손글씨'],
+  ['Nanum Pen Script', 400, '펜글씨'],
+  ['Yeon Sung', 400, '붓글씨'],
 ];
 
 const clampIndex = (v, list) => (Number.isInteger(v) && v >= 0 && v < list.length ? v : 0);
