@@ -471,7 +471,9 @@ export async function startPlay(data) {
   const buttons = [];
   const btnPieces = [];
   {
-    const innerWax = PALETTE.wax[layers[layers.length - 1].w][0];
+    // 버튼은 맨 속 왁스 겹과 같은 왁스 색·글씨 색
+    const innerLayer = layers[layers.length - 1];
+    const innerWax = PALETTE.wax[innerLayer.w][0];
     const clayMat = new THREE.MeshStandardMaterial({ map: makeTex(clayColor, '').tex, roughness: 0.78, envMapIntensity: ENV });
     const box = waxBox(0);
     const defs = [
@@ -494,7 +496,7 @@ export async function startPlay(data) {
       clay.castShadow = clay.receiveShadow = true;
       clay.userData.button = btn;
       group.add(clay);
-      const mat = waxMaterial(innerWax, label, labelOpts);
+      const mat = waxMaterial(innerWax, label, labelOpts, innerLayer.k);
       btn.pieces = initialWaxPolys(box, 10).map((polys) => {
         const piece = buildPiece(polys, box);
         const mesh = new THREE.Mesh(piece.body, mat);
