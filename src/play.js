@@ -26,6 +26,8 @@ const SCRUB_STEP = 0.32; // 꾹 누른 채 끌 때 이만큼 움직일 때마다
 const SCRUB_R = 0.5; // 끌면서 부술 때 함께 떨어지는 반경
 const FINISH_AT = 0.9; // 왁스 넓이의 이만큼이 떨어지면 남은 것도 다 떨어진다
 const HOLD_MS = 420; // 이만큼 누르고 있으면 '꾹'
+// 겹이 많을수록 한 번에 크게 깨진다: 겹 하나 늘 때마다 깨지는 범위가 BIG_PER_LAYER만큼 커진다 (다섯 겹이면 약 1.5배)
+const BIG_PER_LAYER = 0.13;
 
 // 왁뿌 버튼: 크기(본 덩어리 대비), 자리 (덩어리보다 조금 아래, 카메라 쪽)
 const BTN_SCALE = 0.36;
@@ -214,6 +216,7 @@ export async function startPlay(data) {
     for (const polys of initialWaxPolys(wl.box, 30)) addPiece(buildPiece(polys, wl.box), j);
   });
   const totalArea = chunks.reduce((s, c) => s + c.area, 0);
+  const big = 1 + BIG_PER_LAYER * (layers.length - 1);
 
   // 영상 녹화 상태 (resize에서도 보므로 먼저 만든다)
   let recorder = null;
@@ -347,9 +350,9 @@ export async function startPlay(data) {
     if (press.last && press.last.distanceTo(h.local) < SCRUB_STEP) return;
     press.last = h.local;
     if (h.chunk && h.chunk.state === CRACKED) {
-      dropAround(h.chunk, h.local, SCRUB_R, true);
+      dropAround(h.chunk, h.local, SCRUB_R * big, true);
     } else if (h.chunk) {
-      shatter(h.local, h.chunk.layer, 0.75, SCRUB_R, true);
+      shatter(h.local, h.chunk.layer, 0.75 * big, SCRUB_R * big, true);
     }
   }
 
@@ -362,7 +365,7 @@ export async function startPlay(data) {
   function shortHit(chunk, local) {
     if (chunk && chunk.state === CRACKED) {
       presses++;
-      dropAround(chunk, local, DROP_R);
+      dropAround(chunk, local, DROP_R * big);
     } else {
       sound.tick();
     }
@@ -372,8 +375,8 @@ export async function startPlay(data) {
   function longHit(chunk, local) {
     if (!chunk) return;
     presses++;
-    if (chunk.state === CRACKED) { dropAround(chunk, local, DROP_R); return; }
-    shatter(local, chunk.layer, 1, CRUMB_R);
+    if (chunk.state === CRACKED) { dropAround(chunk, local, DROP_R * big); return; }
+    shatter(local, chunk.layer, big, CRUMB_R * big);
   }
 
   // 누른 자리 근처의 같은 겹 성한 조각들을 거미줄 모양으로 다시 자른다
