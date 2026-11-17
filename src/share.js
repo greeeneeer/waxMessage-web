@@ -6,7 +6,7 @@ export const SOAP = { w: 3.2, h: 1.1, d: 2.2, r: 0.34 };
 // 글씨가 들어가는 평평한 윗면의 가로세로
 export const LABEL = { w: SOAP.w - 2 * SOAP.r, d: SOAP.d - 2 * SOAP.r };
 
-export const LIMIT = { lines: 2, perLine: 10 };
+export const LIMIT = { lines: 2 };
 export const MAX_LAYERS = 3; // 왁스는 최대 세 겹
 
 export const PALETTE = {
@@ -67,11 +67,11 @@ export const FONTS = [
 
 const clampIndex = (v, list) => (Number.isInteger(v) && v >= 0 && v < list.length ? v : 0);
 
-// 줄 수와 줄당 글자 수 제한을 맞춘다. (이모지도 한 글자로 센다)
+// 두 줄까지만 남긴다
 export function cleanLines(lines) {
   return lines
     .slice(0, LIMIT.lines)
-    .map((l) => Array.from(String(l ?? '').replace(/[\r\n]/g, '')).slice(0, LIMIT.perLine).join(''));
+    .map((l) => String(l ?? '').replace(/[\r\n]/g, '')); // 글자 수 제한 없음: 길면 글씨가 작아진다
 }
 
 export function textOf(lines) {

@@ -1,5 +1,5 @@
 // 작성 화면: 숨길 글씨, 왁스 겹(색·겉면 글씨), 글꼴·색을 고르고 보낼 링크를 만든다.
-import { PALETTE, FONTS, SOAP, LIMIT, MAX_LAYERS, encode, cleanLines, textOf } from './share.js';
+import { PALETTE, FONTS, SOAP, MAX_LAYERS, encode, cleanLines, textOf } from './share.js';
 import { drawLabel, ensureFont } from './label.js';
 
 const $ = (id) => document.getElementById(id);
@@ -35,11 +35,10 @@ export function startCompose() {
   };
 
   // 숨길 글씨
-  bindLines([$('l1'), $('l2')], [$('n1'), $('n2')], state.lines);
+  bindLines([$('l1'), $('l2')], state.lines);
 
   // 두 줄 입력칸을 상태에 연결한다
-  function bindLines(inputs, counts, target) {
-    const showCount = () => target.forEach((l, i) => (counts[i].textContent = `${Array.from(l).length}/${LIMIT.perLine}`));
+  function bindLines(inputs, target) {
     inputs.forEach((el, i) => {
       el.value = target[i];
       el.addEventListener('input', () => {
@@ -49,7 +48,6 @@ export function startCompose() {
           if (clean !== el.value) el.value = clean;
         }
         target[i] = el.value;
-        showCount();
         update();
       });
       el.addEventListener('compositionstart', () => (el.dataset.composing = '1'));
@@ -65,7 +63,6 @@ export function startCompose() {
         }
       });
     });
-    showCount();
   }
 
   // 왁스 겹 카드들
@@ -77,13 +74,13 @@ export function startCompose() {
       card.className = 'layer-card';
       card.innerHTML = `
         <div class="layer-head"><b></b></div>
-        <div class="line"><input type="text" maxlength="10" autocomplete="off" /><span class="count"></span></div>
-        <div class="line"><input type="text" maxlength="10" autocomplete="off" placeholder="둘째 줄" /><span class="count"></span></div>
+        <div class="line"><input type="text" autocomplete="off" /></div>
+        <div class="line"><input type="text" autocomplete="off" placeholder="둘째 줄" /></div>
         <div class="swatches"></div>`;
       card.querySelector('b').textContent = layerName(i);
       const inputs = [...card.querySelectorAll('input')];
       inputs[0].placeholder = '첫째 줄';
-      bindLines(inputs, [...card.querySelectorAll('.count')], layer.lines);
+      bindLines(inputs, layer.lines);
 
       if (i > 0) {
         const rm = document.createElement('button');

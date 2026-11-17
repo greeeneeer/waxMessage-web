@@ -108,7 +108,7 @@ body.mode-play { overflow: hidden; overscroll-behavior: none; background: #0d0a0
 .line input {
   width: 100%;
   font-size: 20px;
-  padding: 12px 64px 12px 16px;
+  padding: 12px 16px;
   border: 1px solid var(--line);
   border-radius: 14px;
   background: var(--card2);

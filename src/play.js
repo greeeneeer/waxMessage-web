@@ -564,6 +564,7 @@ export async function startPlay(data) {
   // ---------- 클레이 잡아당기기 (글씨가 드러난 뒤) ----------
   // 잡은 자리 근처 꼭짓점이 손가락을 따라 움직인다. 놓아도 그 모양 그대로 남는다 (점토처럼).
   const GRAB_R = 1.0;
+  const GRAB_GAIN = 0.4;
   const soapPos = soap.geometry.attributes.position;
   let grab = null;
   const grabPlane = new THREE.Plane();
@@ -584,8 +585,9 @@ export async function startPlay(data) {
     ndc.set(((x - r.left) / r.width) * 2 - 1, -((y - r.top) / r.height) * 2 + 1);
     raycaster.setFromCamera(ndc, camera);
     if (!raycaster.ray.intersectPlane(grabPlane, grabHit)) return;
-    const delta = grabHit.clone().sub(grab.start);
-    if (delta.length() > 1.6) delta.setLength(1.6);
+    // 감도: 손가락이 움직인 거리의 GRAB_GAIN배만큼만 늘어난다
+    const delta = grabHit.clone().sub(grab.start).multiplyScalar(GRAB_GAIN);
+    if (delta.length() > 0.9) delta.setLength(0.9);
     delta.applyQuaternion(lump.quaternion.clone().invert()); // 덩어리 기준 방향으로
     const a = soapPos.array;
     for (let i = 0; i < soapPos.count; i++) {

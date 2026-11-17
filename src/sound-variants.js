@@ -316,7 +316,7 @@ export const VARIANTS = {
         },
       },
       {
-        name: '휘익~ 휘이익 (앞뒤 음 바꿈)',
+        name: '휘이익~ 휘익 (앞뒤 음·길이 바꿈)',
         make(sr) {
           const d = buf(sr, 1.3);
           const glide = (t0, len, a, b, c) => {
@@ -329,8 +329,8 @@ export const VARIANTS = {
               d[i] += Math.sin(ph) * Math.min(1, t / 0.04) * Math.min(1, (len - t) / 0.08);
             }
           };
-          glide(0, 0.32, 1300, 2700, 950);
-          glide(0.42, 0.75, 900, 2300, 2100);
+          glide(0, 0.75, 1300, 2700, 950);
+          glide(0.85, 0.32, 900, 2300, 2100);
           return [normalize(d, 0.6)];
         },
       },
@@ -436,10 +436,10 @@ export const VARIANTS = {
           const out = [];
           for (let ch = 0; ch < 2; ch++) {
             const d = buf(sr, 4.5);
-            for (let v = 0; v < 14; v++) voice(d, sr, rnd(0, 0.4), rnd(1.6, 3.6), rnd(160, 480), 0.35);
-            for (let k = 0; k < 140; k++) {
-              const t = rnd(0.3, 3.8);
-              clap(d, sr, t, rnd(0.2, 0.5) * Math.max(0, 1 - Math.max(0, t - 2.8) / 1.0));
+            for (let v = 0; v < 14; v++) voice(d, sr, rnd(0, 0.4), rnd(1.6, 3.6), rnd(160, 480), 0.22);
+            for (let k = 0; k < 220; k++) {
+              const t = rnd(0.15, 3.8);
+              clap(d, sr, t, rnd(0.45, 0.95) * Math.max(0, 1 - Math.max(0, t - 2.8) / 1.0));
             }
             out.push(normalize(d, 0.75));
           }
